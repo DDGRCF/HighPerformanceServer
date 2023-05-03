@@ -1,7 +1,13 @@
+#include <pthread.h>
+#include <time.h>
 #include <iostream>
-#include "sylar/log.h"
+#include <memory>
+#include "ddg/log.h"
+#include "ddg/utils.h"
 
 int main(int argc, char** argv) {
-  std::cout << "Hello World!" << std::endl;
+  auto logger = DDG_LOG_NAME("root");
+
+  DDG_LOG_INFO(logger) << "rcf is test";
   return 0;
 }

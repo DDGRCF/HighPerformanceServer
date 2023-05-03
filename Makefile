@@ -1,6 +1,5 @@
 .PHONY: xx
 
-
 "":
 	if [ -d "build" ]; then \
 		cd build && make -j$(nproc); \

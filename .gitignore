@@ -33,3 +33,7 @@
 
 build/
 bin/
+
+.vim/
+.vimspector.json
+.cache
