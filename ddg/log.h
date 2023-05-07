@@ -15,6 +15,7 @@
 
 #include "ddg/singleton.h"
 #include "ddg/utils.h"
+#include "lexicalcast.h"
 #include "stdarg.h"
 
 // Level
@@ -61,39 +62,16 @@
 #define DDG_LOG_FMT_FATAL(logger, fmt, ...) \
   DDG_LOG_FMT_LEVEL(logger, ddg::LogLevel::FATAL, fmt, __VA_ARGS__)
 
-#define DDG_LOG_VECTOR_DEBUG(logger, vec) \
-  {                                       \
-    std::string res = "";                 \
-    for (auto& i : vec) {                 \
-      if (res.empty()) {                  \
-        res = std::to_string(i);          \
-      } else {                            \
-        res += ", " + std::to_string(i);  \
-      }                                   \
-    }                                     \
-    DDG_LOG_DEBUG(logger) << res;         \
-  }
-
-#define DDG_LOG_MAP_DEBUG(logger, map)                            \
-  {                                                               \
-    std::string res = "";                                         \
-    for (auto& i : map) {                                         \
-      if (res.empty()) {                                          \
-        res = i.first + ", " + std::to_string(i.second);          \
-      } else {                                                    \
-        res += " | " + i.first + ", " + std::to_string(i.second); \
-      }                                                           \
-    }                                                             \
-    DDG_LOG_DEBUG(logger) << res;                                 \
-  }
-
 #define DDG_LOG_ROOT() ddg::LoggerMgr::GetInstance()->getRoot()
 
 #define DDG_LOG_NAME(name) ddg::LoggerMgr::GetInstance()->getLogger(name)
 
+#define DDG_LOG_REMOVE(name) ddg::LoggerMgr::GetInstance()->delLogger(name)
+
 namespace ddg {
 
 class Logger;
+class LoggerManager;
 
 // LogLevel
 class LogLevel {
@@ -176,15 +154,6 @@ class LogEventWrap {
 // LogFormatter
 class LogFormatter {
  public:
-  LogFormatter(const std::string& pattern);
-
-  typedef std::shared_ptr<LogFormatter> ptr;
-  std::string format(std::shared_ptr<Logger> logger, LogLevel::Level level,
-                     LogEvent::ptr event);
-
-  void init();
-
- public:
   class FormatItem {
    public:
     typedef std::shared_ptr<FormatItem> ptr;
@@ -197,6 +166,21 @@ class LogFormatter {
    private:
   };
 
+ public:
+  LogFormatter(const std::string& pattern);
+
+  typedef std::shared_ptr<LogFormatter> ptr;
+  std::string format(std::shared_ptr<Logger> logger, LogLevel::Level level,
+                     LogEvent::ptr event);
+
+  bool getError() const { return m_error; }
+
+  std::string getPattern() const { return m_pattern; }
+
+  static bool checkValid(const std::string& pattern);
+  static bool initPattern(const std::string& pattern,
+                          std::vector<FormatItem::ptr>& items);
+
  private:
   std::string m_pattern;
   std::vector<FormatItem::ptr> m_items;
@@ -206,6 +190,15 @@ class LogFormatter {
 // LogAppender
 class LogAppender {
  public:
+  enum Type {
+    FILE_LOG_APPENDER = 0,
+    STDOUT_LOG_APPENDER = 1,
+    UNKNOW_APPENDER = 2,
+  };
+
+  static LogAppender::Type FromString(const std::string& type);
+  static std::string ToString(LogAppender::Type type);
+
   typedef std::shared_ptr<LogAppender> ptr;
 
   virtual ~LogAppender() {}
@@ -219,6 +212,10 @@ class LogAppender {
 
   void setLevel(LogLevel::Level level) { m_level = level; }
 
+  virtual std::string toYamlString() = 0;
+
+  virtual std::string toString() = 0;
+
  protected:
   LogLevel::Level m_level = LogLevel::DEBUG;
   LogFormatter::ptr m_formatter;
@@ -229,14 +226,22 @@ class StdoutLogAppender : public LogAppender {
   typedef std::shared_ptr<LogAppender> ptr;
   void log(std::shared_ptr<Logger> logger, LogLevel::Level level,
            LogEvent::ptr event) override;
+
+  std::string toYamlString() override;
+  std::string toString() override;
 };
 
 class FileLogAppender : public LogAppender {
  public:
+  FileLogAppender(const std::string& file = "/tmp/ddg_server.txt");
   typedef std::shared_ptr<FileLogAppender> ptr;
   void log(std::shared_ptr<Logger> logger, LogLevel::Level level,
            LogEvent::ptr event) override;
   bool reopen();
+
+  std::string toYamlString() override;
+
+  std::string toString() override;
 
  private:
   std::string m_filename;
@@ -259,15 +264,27 @@ class Logger : public std::enable_shared_from_this<
   void error(LogEvent::ptr event);
   void fatal(LogEvent::ptr event);
 
-  LogLevel::Level getLevel();
-  void setLevel(LogLevel::Level level);
+  Logger::ptr getRoot() const;
+  void setRoot(Logger::ptr root);
 
   void addAppender(LogAppender::ptr appender);
   void delAppender(LogAppender::ptr appender);
+  void clearAppender();
 
   std::string getName() const { return m_name; }
 
+  void setLevel(LogLevel::Level level);
+
   LogLevel::Level getLevel() const { return m_level; }
+
+  void setFormatter(LogFormatter::ptr formatter);
+  void setFormatter(const std::string& pattern);
+
+  LogFormatter::ptr getFormatter() const { return m_formatter; }
+
+  std::string toYamlString();
+
+  std::string toString();
 
   const std::list<LogAppender::ptr>& getAppenders() const {
     return m_appenders;
@@ -278,6 +295,7 @@ class Logger : public std::enable_shared_from_this<
   LogLevel::Level m_level;
   std::list<LogAppender::ptr> m_appenders;
   LogFormatter::ptr m_formatter;
+  Logger::ptr m_root = nullptr;
 };
 
 class MutexLock {
@@ -314,11 +332,15 @@ class LoggerManager {
 
   Logger::ptr getLogger(const std::string& name);
 
+  void delLogger(const std::string& name);
+
   void init();  // extra init for expanding
 
   std::unordered_map<std::string, Logger::ptr> m_logger;
 
   std::string toYamlString();
+
+  std::string toString();
 
  private:
   MutexType m_mutex;
@@ -326,7 +348,174 @@ class LoggerManager {
   std::unordered_map<std::string, Logger::ptr> m_loggers;
 };
 
+// Log dataset structure
+struct LogAppenderDefine {
+  LogAppender::Type type = LogAppender::UNKNOW_APPENDER;
+  LogLevel::Level level = LogLevel::UNKNOW;
+  std::string formatter;
+  std::string file;
+
+  bool operator==(const LogAppenderDefine& oth) const;
+
+  std::string getString() const;
+  // friend std::ostream& operator<<(std::ostream& os, const LogAppenderDefine& define);
+};
+
+struct LogDefine {
+  std::string name;
+  LogLevel::Level level = LogLevel::UNKNOW;
+  std::string formatter;
+  std::vector<LogAppenderDefine> appenders;
+
+  bool operator==(const LogDefine& oth) const;
+  bool operator<(const LogDefine& oth) const;
+
+  std::string getString() const;
+  // friend std::ostream& operator<<(std::ostream& os, const LogDefine& define);
+};
+
 typedef Singleton<LoggerManager> LoggerMgr;
+
+// LexicalCast
+template <>
+class LexicalCast<LogAppenderDefine, std::string> {
+ public:
+  std::string operator()(const LogAppenderDefine& in) {
+    YAML::Node node;
+    if (in.level != LogLevel::UNKNOW) {
+      node["level"] = LogLevel::ToString(in.level);
+    }
+    if (!in.formatter.empty()) {
+      node["formatter"] = in.formatter;
+    }
+
+    if (!in.file.empty()) {
+      node["file"] = in.file;
+    }
+
+    if (in.type != LogAppender::UNKNOW_APPENDER) {
+      node["type"] = LogAppender::ToString(in.type);
+    }
+    std::stringstream ss;
+    ss << node;
+    return ss.str();
+  }
+};
+
+template <>
+class LexicalCast<std::string, LogAppenderDefine> {
+ public:
+  LogAppenderDefine operator()(const std::string& in) {
+    YAML::Node node = YAML::Load(in);
+    LogAppenderDefine define;
+    for (auto it = node.begin(); it != node.end(); it++) {
+      std::string key = it->first.Scalar();
+      if (key == "type") {
+        define.type = LogAppender::FromString(it->second.Scalar());
+      } else if (key == "level") {
+        define.level = LogLevel::FromString(it->second.Scalar());
+      } else if (key == "file") {
+        define.file = it->second.Scalar();
+      } else if (key == "formatter") {
+        define.formatter = it->second.Scalar();
+      } else {
+        DDG_LOG_WARN(DDG_LOG_ROOT()) << "LexicalCast(from std::string to "
+                                        "LogAppenerDefine) gets unexpected key "
+                                     << key;
+      }
+    }
+    return define;
+  }
+};
+
+template <>
+class LexicalCast<LogDefine, std::string> {
+ public:
+  std::string operator()(const LogDefine& in) {
+    YAML::Node node;
+    node["name"] = in.name;
+    if (in.level != LogLevel::UNKNOW) {
+      node["level"] = LogLevel::ToString(in.level);
+    }
+    if (!in.formatter.empty()) {
+      if (!LogFormatter::checkValid(in.formatter)) {
+        DDG_LOG_ERROR(DDG_LOG_ROOT())
+            << "LexicalCast(from LogDefine to std::string) gets invalid "
+               "formatter = "
+            << in.formatter;
+        node["formatter"] = "";
+      } else {
+        node["formatter"] = in.formatter;
+      }
+    }
+
+    for (auto& appender : in.appenders) {
+      node["appenders"].push_back(
+          YAML::Load(LexicalCast<LogAppenderDefine, std::string>()(appender)));
+    }
+
+    std::stringstream ss;
+    ss << node;
+    return ss.str();
+  }
+};
+
+template <>
+class LexicalCast<std::string, LogDefine> {
+ public:
+  LogDefine operator()(const std::string& in) {
+    YAML::Node node = YAML::Load(in);
+    LogDefine define;
+    for (auto it = node.begin(); it != node.end(); it++) {
+      std::string key = it->first.Scalar();
+      if (key == "name") {
+        if (it->second.Scalar().empty()) {
+          throw std::invalid_argument(key);
+        }
+        define.name = it->second.Scalar();
+      } else if (key == "level") {
+        define.level = LogLevel::FromString(it->second.Scalar());
+      } else if (key == "formatter") {
+        auto formatter = it->second.Scalar();
+        if (!LogFormatter::checkValid(formatter)) {
+          DDG_LOG_ERROR(DDG_LOG_ROOT())
+              << "LexicalCast(from std::string, LogDefine) gets invalid "
+                 "formatter = "
+              << formatter;
+          define.formatter = "";
+        } else {
+          define.formatter = formatter;
+        }
+      } else if (key == "appenders") {
+        std::stringstream ss;
+        for (auto it = node[key].begin(); it != node[key].end(); it++) {
+          ss.str("");
+          ss.clear();
+          ss << *it;
+          define.appenders.push_back(
+              LexicalCast<std::string, LogAppenderDefine>()(ss.str()));
+        }
+      } else {
+        DDG_LOG_WARN(DDG_LOG_ROOT())
+            << "LexicalCast(from std::string, LogDefine) gets unexpected key "
+            << key;
+      }
+    }
+
+    for (auto& appender : define.appenders) {
+      if (!define.formatter.empty() && appender.formatter.empty()) {
+        appender.formatter = define.formatter;
+      }
+
+      if (define.level != LogLevel::UNKNOW &&
+          appender.level == LogLevel::UNKNOW) {
+        appender.level = define.level;
+      }
+    }
+
+    return define;
+  }
+};
 
 }  // namespace ddg
 

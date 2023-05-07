@@ -1,9 +1,8 @@
 #ifndef DDG_CONFIG_H_
 #define DDG_CONFIG_H_
 
-#include <ddg/log.h>
 #include <yaml-cpp/yaml.h>
-#include <boost/lexical_cast.hpp>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -11,6 +10,8 @@
 #include <typeinfo>
 #include <unordered_map>
 #include <unordered_set>
+#include "ddg/lexicalcast.h"
+#include "ddg/log.h"
 #include "utils.h"
 
 namespace ddg {
@@ -37,215 +38,17 @@ class ConfigVarBase {
   std::string m_description;
 };
 
-/**
- * @brief 将类型转化为(F类型， T目标类型)
-*/
-template <class F, class T>
-class LexicalCast {
- public:
-  T operator()(const F& v) {
-    return boost::lexical_cast<T>(v);
-  }  // 转化出错将报错
-};
-
-template <class T>
-class LexicalCast<std::string, std::vector<T>> {
- public:
-  std::vector<T> operator()(const std::string& v) {
-    YAML::Node node = YAML::Load(v);
-    typename std::vector<T> vec;
-    std::stringstream ss;
-    for (size_t i = 0; i < node.size(); i++) {
-      ss.str("");  // 重置内容
-      ss.clear();  // 清空标志位
-      ss << node[i];
-      vec.push_back(LexicalCast<std::string, T>()(ss.str()));
-    }
-    return vec;
-  }
-};
-
-template <class T>
-class LexicalCast<std::vector<T>, std::string> {
- public:
-  std::string operator()(const std::vector<T>& v) {
-    YAML::Node node(YAML::NodeType::Sequence);
-    for (auto& i : v) {
-      node.push_back(YAML::Load(LexicalCast<T, std::string>()(i)));
-    }
-    std::stringstream ss;
-    ss << node;
-    return ss.str();
-  }
-};
-
-template <class T>
-class LexicalCast<std::string, std::list<T>> {
- public:
-  std::list<T> operator()(const std::string& v) {
-    YAML::Node node = YAML::Load(v);
-    typename std::list<T> lis;
-    std::stringstream ss;
-    for (size_t i = 0; i < node.size(); i++) {
-      ss.str("");
-      ss.clear();
-      ss << node[i];
-      lis.push_back(LexicalCast<std::string, T>()(ss.str()));
-    }
-    return lis;
-  }
-};
-
-template <class T>
-class LexicalCast<std::list<T>, std::string> {
- public:
-  std::string operator()(const std::list<T>& v) {
-    YAML::Node node(YAML::NodeType::Sequence);
-    for (auto& i : v) {
-      node.push_back(YAML::Load(LexicalCast<T, std::string>()(i)));
-    }
-    std::stringstream ss;
-    ss << node;
-    return ss.str();
-  }
-};
-
-template <class T>
-class LexicalCast<std::string, std::set<T>> {
- public:
-  std::set<T> operator()(const std::string& v) {
-    YAML::Node node = YAML::Load(v);
-    typename std::set<T> st;
-    std::stringstream ss;
-    for (size_t i = 0; i < node.size(); i++) {
-      ss.str("");
-      ss.clear();
-      ss << node[i];
-      st.insert(LexicalCast<std::string, T>()(ss.str()));
-    }
-    return st;
-  }
-};
-
-template <class T>
-class LexicalCast<std::set<T>, std::string> {
- public:
-  std::string operator()(const std::set<T>& v) {
-    YAML::Node node(YAML::NodeType::Sequence);
-    for (auto& i : v) {
-      node.push_back(YAML::Load(LexicalCast<T, std::string>()(i)));
-    }
-    std::stringstream ss;
-    ss << node;
-    return ss.str();
-  }
-};
-
-template <class T>
-class LexicalCast<std::string, std::unordered_set<T>> {
- public:
-  std::unordered_set<T> operator()(const std::string& v) {
-    YAML::Node node = YAML::Load(v);
-    typename std::unordered_set<T> st;
-    std::stringstream ss;
-    for (size_t i = 0; i < node.size(); i++) {
-      ss.str("");
-      ss.clear();
-      ss << node[i];
-      st.insert(LexicalCast<std::string, T>()(ss.str()));
-    }
-    return st;
-  }
-};
-
-template <class T>
-class LexicalCast<std::unordered_set<T>, std::string> {
- public:
-  std::string operator()(const std::unordered_set<T>& v) {
-    YAML::Node node(YAML::NodeType::Sequence);
-    for (auto& i : v) {
-      node.push_back(YAML::Load(LexicalCast<T, std::string>()(i)));
-    }
-    std::stringstream ss;
-    ss << node;
-    return ss.str();
-  }
-};
-
-template <class T>
-class LexicalCast<std::string, std::map<std::string, T>> {
- public:
-  std::map<std::string, T> operator()(const std::string& v) {
-    YAML::Node node = YAML::Load(v);
-    typename std::map<std::string, T> mp;
-    std::stringstream ss;
-    for (auto it = node.begin(); it != node.end(); it++) {
-      ss.str("");
-      ss.clear();
-      ss << it->second;
-      mp.insert(
-          std::make_pair(it->first, LexicalCast<std::string, T>()(it->second)));
-    }
-    return mp;
-  }
-};
-
-template <class T>
-class LexicalCast<std::map<std::string, T>, std::string> {
- public:
-  std::string operator()(const std::map<std::string, T>& v) {
-    YAML::Node node(YAML::NodeType::Sequence);
-    for (auto& i : v) {
-      node.force_insert(i.first,
-                        YAML::Load(LexicalCast<T, std::string>()(i.second)));
-    }
-    std::stringstream ss;
-    ss << node;
-    return ss.str();
-  }
-};
-
-template <class T>
-class LexicalCast<std::string, std::unordered_map<std::string, T>> {
- public:
-  std::unordered_map<std::string, T> operator()(const std::string& v) {
-    YAML::Node node = YAML::Load(v);
-    typename std::unordered_map<std::string, T> mp;
-    std::stringstream ss;
-    for (auto it = node.begin(); it != node.end(); it++) {
-      ss.str("");
-      ss.clear();
-      ss << it->second;
-      mp.insert(std::make_pair(it->first.Scalar(),
-                               LexicalCast<std::string, T>()(ss.str())));
-    }
-    return mp;
-  }
-};
-
-template <class T>
-class LexicalCast<std::unordered_map<std::string, T>, std::string> {
- public:
-  std::string operator()(const std::unordered_map<std::string, T>& v) {
-    YAML::Node node(YAML::NodeType::Sequence);
-    for (auto& i : v) {
-      node.force_insert(i.first,
-                        YAML::Load(LexicalCast<T, std::string>()(i.second)));
-    }
-    std::stringstream ss;
-    ss << node;
-    return ss.str();
-  }
-};
-
 template <class T, class FromStr = LexicalCast<std::string, T>,
           class ToStr = LexicalCast<T, std::string>>
 class ConfigVar : public ConfigVarBase {
  public:
   typedef std::shared_ptr<ConfigVar> ptr;
 
-  // typedef std::function<void(const T& old_value, const T& new_value)>
-  // on_change_cb;
+  typedef std::function<void(const T& old_value, const T& new_value)>
+      on_change_cb;  // 回调函数监视事件
+
+  template <class K>
+  friend std::ostream& operator<<(std::ostream& os, ConfigVar<K> var);
 
   ConfigVar(const std::string& name, const T& default_value,
             const std::string& description = "")
@@ -280,6 +83,9 @@ class ConfigVar : public ConfigVarBase {
     if (m_val == v) {
       return;
     }
+    for (auto& i : m_cbs) {
+      i.second(m_val, v);
+    }
     m_val = v;
   }
 
@@ -287,9 +93,47 @@ class ConfigVar : public ConfigVarBase {
 
   std::string getTypeName() const override { return TypeToName<T>(); }
 
+  uint64_t addListener(on_change_cb cb) {
+    for (uint64_t i = 0; i <= s_func_id; i++) {
+      if (m_cbs.find(i) == m_cbs.end()) {
+        m_cbs.insert(std::make_pair(i, cb));
+        return i;
+      }
+    }
+
+    m_cbs.insert(std::make_pair(++s_func_id, cb));
+    return s_func_id;
+  }
+
+  void addListener(uint64_t key, on_change_cb cb) {
+    if (key > s_func_id) {
+      s_func_id = key;
+    }
+    m_cbs.insert(std::make_pair(key, cb));
+  }
+
+  void dealListener(uint64_t key) { m_cbs.earse(key); }
+
+  void clearListener() { m_cbs.clear(); }
+
+  on_change_cb getListener(uint64_t key) {
+    auto it = m_cbs.find(key);
+    return it == m_cbs.end() ? nullptr : it->second;
+  }
+
  private:
   T m_val;
+
+  uint64_t s_func_id = 0;
+  std::unordered_map<uint64_t, on_change_cb>
+      m_cbs;  // 加map是因为回调函数没有等于
 };
+
+template <class T>
+std::ostream& operator<<(std::ostream& os, ConfigVar<T> var) {
+  os << var.toString();
+  return os;
+}
 
 // Config
 class Config {
@@ -350,8 +194,9 @@ class Config {
 
  private:
   // static ConfigVarMap s_datas;  // 程序开始就初始化
-  static ConfigVarMap&
-  GetDatas() {  // 在第一次调用的时候才初始化，避免慢启动问题，控制创建时机，避免不必要的开销
+  // 在第一次调用的时候才初始化，避免慢启动问题，控制创建时机，避免不必要的开销
+  // 最主要的原因是保证static初始化元素之间没有初始化顺序，通过这样能够明确调用顺序
+  static ConfigVarMap& GetDatas() {
     static ConfigVarMap s_datas;
     return s_datas;
   }

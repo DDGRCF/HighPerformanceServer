@@ -37,3 +37,4 @@ bin/
 .vim/
 .vimspector.json
 .cache
+logs/

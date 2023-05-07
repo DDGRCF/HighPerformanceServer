@@ -13,8 +13,7 @@ ConfigVarBase::ConfigVarBase(const std::string& name,
 }
 
 // Config
-
-const std::string Config::kValidSet = "abcdefghijklmnopqrstuvwxyz._012345678";
+const std::string Config::kValidSet = "abcdefghijklmnopqrstuvwxyz._0123456789";
 
 ConfigVarBase::ptr Config::LookupBase(const std::string& name) {
   auto it = GetDatas().find(name);
@@ -29,6 +28,7 @@ void Config::ListAllMember(
         << "Config invalid name: " << prefix << " : " << node;
     return;
   }
+
   output.push_back(std::make_pair(prefix, node));  // 递归获取层级结构
   if (node.IsMap()) {
     for (auto it = node.begin(); it != node.end(); it++) {
@@ -51,6 +51,7 @@ void Config::LoadFromYaml(const YAML::Node& root) {
 
     std::transform(key.begin(), key.end(), key.begin(), ::tolower);
     ConfigVarBase::ptr var = LookupBase(key);
+
     if (var) {
       if (i.second.IsScalar()) {
         var->fromString(i.second.Scalar());

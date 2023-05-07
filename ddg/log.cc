@@ -1,12 +1,10 @@
 #include "log.h"
+#include "config.h"
+#include "lexicalcast.h"
 
 namespace ddg {
 
 // LogLevel
-LogLevel::Level Logger::getLevel() {
-  return m_level;
-}
-
 const char* LogLevel::ToString(LogLevel::Level level) {
 
   switch (level) {
@@ -26,10 +24,12 @@ const char* LogLevel::ToString(LogLevel::Level level) {
   return "UNKNOW";
 }
 
-LogLevel::Level FromString(const std::string& level) {
-#define XX(name)           \
-  if (#name == level) {    \
-    return LogLevel::name; \
+LogLevel::Level LogLevel::FromString(const std::string& level) {
+  std::string new_level = level;
+  std::transform(level.begin(), level.end(), new_level.begin(), ::toupper);
+#define XX(name)            \
+  if (#name == new_level) { \
+    return LogLevel::name;  \
   }
   XX(DEBUG);
   XX(INFO);
@@ -47,35 +47,50 @@ Logger::Logger(const std::string& name)
       new LogFormatter("%d{%Y-%m-%d %H:%M:%S}%T%t%T%F%T[%p]%T<%f:%l>%T%m%n"));
 }
 
-void Logger::setLevel(LogLevel::Level level) {
-  m_level = level;
-}
-
-void Logger::log(LogLevel::Level level, LogEvent::ptr event) {
-  if (level >= m_level) {
-    auto self = shared_from_this();
-    for (auto& i : m_appenders) {
-      i->log(self, level, event);
-    }
+std::string Logger::toYamlString() {
+  YAML::Node node;
+  node["name"] = m_name;
+  if (m_level != LogLevel::UNKNOW) {
+    node["level"] = LogLevel::ToString(m_level);
   }
+  if (m_formatter) {
+    node["formatter"] = m_formatter->getPattern();
+  }
+
+  for (auto& i : m_appenders) {
+    node["appenders"].push_back(YAML::Load(i->toYamlString()));
+  }
+  std::stringstream ss;
+  ss << node;
+  return ss.str();
 }
 
-void Logger::debug(LogEvent::ptr event) {}
-
-void Logger::info(LogEvent::ptr event) {
-  log(LogLevel::INFO, event);
+std::string Logger::toString() {
+  return toYamlString();
 }
 
-void Logger::warn(LogEvent::ptr event) {
-  log(LogLevel::WARN, event);
+Logger::ptr Logger::getRoot() const {
+  return m_root;
 }
 
-void Logger::error(LogEvent::ptr event) {
-  log(LogLevel::ERROR, event);
+void Logger::setRoot(Logger::ptr root) {
+  m_root = root;
 }
 
-void Logger::fatal(LogEvent::ptr event) {
-  log(LogLevel::FATAL, event);
+void Logger::setFormatter(const std::string& pattern) {
+  auto i = std::make_shared<LogFormatter>(pattern);
+  if (i->getError()) {
+    std::cout << "Logger::setFormatter name = " << m_name
+              << " pattern = " << pattern << " invalid formatter" << std::endl;
+    return;
+  }
+  setFormatter(m_formatter);
+}
+
+void Logger::setFormatter(LogFormatter::ptr formatter) {
+  for (auto& i : m_appenders) {
+    i->setFormatter(formatter);
+  }
 }
 
 void Logger::addAppender(LogAppender::ptr appender) {
@@ -96,8 +111,48 @@ void Logger::delAppender(LogAppender::ptr appender) {
   }
 }
 
-// LogEvent
+void Logger::clearAppender() {
+  m_appenders.clear();
+}
 
+void Logger::log(LogLevel::Level level, LogEvent::ptr event) {
+  if (level >= m_level) {
+    auto self = shared_from_this();
+    if (!m_appenders.empty()) {
+      for (auto& i : m_appenders) {
+        i->log(self, level, event);
+      }
+    } else {
+      m_root->log(level, event);
+    }
+  }
+}
+
+void Logger::debug(LogEvent::ptr event) {
+  log(LogLevel::DEBUG, event);
+}
+
+void Logger::info(LogEvent::ptr event) {
+  log(LogLevel::INFO, event);
+}
+
+void Logger::warn(LogEvent::ptr event) {
+  log(LogLevel::WARN, event);
+}
+
+void Logger::error(LogEvent::ptr event) {
+  log(LogLevel::ERROR, event);
+}
+
+void Logger::fatal(LogEvent::ptr event) {
+  log(LogLevel::FATAL, event);
+}
+
+void Logger::setLevel(LogLevel::Level level) {
+  m_level = level;
+}
+
+// LogEvent
 LogEvent::LogEvent(Logger::ptr logger, LogLevel::Level level, const char* file,
                    const int32_t& line, const uint64_t& elapse,
                    const uint64_t& thread_id, const uint64_t& fiber_id,
@@ -128,7 +183,6 @@ void LogEvent::format(const char* fmt, va_list al) {
 }
 
 // LogEventWrap
-
 LogEventWrap::LogEventWrap(LogEvent::ptr event) : m_event(event) {}
 
 LogEventWrap::~LogEventWrap() {
@@ -140,11 +194,76 @@ std::stringstream& LogEventWrap::getSS() {
 }
 
 // Appender
+std::string StdoutLogAppender::toYamlString() {
+  YAML::Node node;
+  node["level"] = LogLevel::ToString(m_level);
+  node["type"] = LogAppender::ToString(LogAppender::STDOUT_LOG_APPENDER);
+  node["formatter"] = m_formatter->getPattern();
+  std::stringstream ss;
+  ss << node;
+  return ss.str();
+}
+
+std::string StdoutLogAppender::toString() {
+  return toYamlString();
+}
+
+std::string FileLogAppender::toYamlString() {
+  YAML::Node node;
+  node["level"] = LogLevel::ToString(m_level);
+  node["type"] = LogAppender::ToString(LogAppender::STDOUT_LOG_APPENDER);
+  node["formatter"] = m_formatter->getPattern();
+  node["file"] = m_filename;
+  std::stringstream ss;
+  ss << node;
+  return ss.str();
+}
+
+std::string FileLogAppender::toString() {
+  return toYamlString();
+}
+
+#define FILE_LOG_APPENDER_STR "FileLogAppender"
+#define STDOUT_LOG_APPENDER_STR "StdoutLogAppender"
+
+LogAppender::Type LogAppender::FromString(const std::string& type) {
+#define XX(name)              \
+  if (name##_STR == type) {   \
+    return LogAppender::name; \
+  }
+  XX(FILE_LOG_APPENDER);
+  XX(STDOUT_LOG_APPENDER);
+  return LogAppender::UNKNOW_APPENDER;
+
+#undef XX
+}
+
+std::string LogAppender::ToString(LogAppender::Type type) {
+  switch (type) {
+#define XX(name)          \
+  case LogAppender::name: \
+    return name##_STR;    \
+    break
+    XX(FILE_LOG_APPENDER);
+    XX(STDOUT_LOG_APPENDER);
+    default:
+      return "UnknowAppender";
+#undef XX
+  }
+}
+
+#undef FILE_LOG_APPENDER_STR
+#undef STDOUT_LOG_APPENDER_STR
+
 void StdoutLogAppender::log(Logger::ptr logger, LogLevel::Level level,
                             LogEvent::ptr event) {
   if (level >= m_level) {
     std::cout << m_formatter->format(logger, level, event);
   }
+}
+
+FileLogAppender::FileLogAppender(const std::string& file) : m_filename(file) {
+  m_filestream.open(m_filename);
 }
 
 void FileLogAppender::log(Logger::ptr logger, LogLevel::Level level,
@@ -163,14 +282,6 @@ bool FileLogAppender::reopen() {
 }
 
 // Formatter
-std::string LogFormatter::format(Logger::ptr logger, LogLevel::Level level,
-                                 LogEvent::ptr event) {
-  std::stringstream ss;
-  for (auto& i : m_items) {
-    i->format(ss, logger, level, event);
-  }
-  return ss.str();
-}
 
 class StringFormatItem : public LogFormatter::FormatItem {
  public:
@@ -271,7 +382,6 @@ class NameFormatItem : public LogFormatter::FormatItem {
  public:
   void format(std::ostream& os, Logger::ptr logger, LogLevel::Level level,
               LogEvent::ptr event) override {
-    // os << logger->getName();
     os << event->getLogger()->getName();
   }
 };
@@ -293,22 +403,28 @@ class TabFormatItem : public LogFormatter::FormatItem {
 };
 
 LogFormatter::LogFormatter(const std::string& pattern) : m_pattern(pattern) {
-  init();
+  m_error = initPattern(m_pattern, m_items);
 }
 
-void LogFormatter::init() {
+bool LogFormatter::checkValid(const std::string& pattern) {
+  std::vector<FormatItem::ptr> items;
+  return !LogFormatter::initPattern(pattern, items);
+}
+
+bool LogFormatter::initPattern(const std::string& pattern,
+                               std::vector<FormatItem::ptr>& items) {
   //str, format, type
   std::vector<std::tuple<std::string, std::string, int>> vec;
   std::string nstr;
-  // TODO:
-  for (size_t i = 0; i < m_pattern.size(); i++) {
-    if (m_pattern[i] != '%') {
-      nstr.push_back(m_pattern[i]);
+  bool error = false;
+  for (size_t i = 0; i < pattern.size(); i++) {
+    if (pattern[i] != '%') {
+      nstr.push_back(pattern[i]);
       continue;
     }
 
-    if (i + 1 < m_pattern.size()) {
-      if (m_pattern[i + 1] == '%') {
+    if (i + 1 < pattern.size()) {
+      if (pattern[i + 1] == '%') {
         nstr.push_back('%');
         continue;
       }
@@ -319,33 +435,33 @@ void LogFormatter::init() {
     uint8_t fmt_status = 0;
     size_t fmt_begin = 0;
 
-    while (n < m_pattern.size()) {
-      if (!fmt_status && !isalpha(m_pattern[n]) && m_pattern[n] != '{' &&
-          m_pattern[n] != '}') {
-        str = m_pattern.substr(i + 1, n - i - 1);
+    while (n < pattern.size()) {
+      if (!fmt_status && !isalpha(pattern[n]) && pattern[n] != '{' &&
+          pattern[n] != '}') {
+        str = pattern.substr(i + 1, n - i - 1);
         break;
       }
 
       if (fmt_status == 0) {
-        if (m_pattern[n] == '{') {
-          str = m_pattern.substr(i + 1, n - i - 1);
+        if (pattern[n] == '{') {
+          str = pattern.substr(i + 1, n - i - 1);
           fmt_status = 1;
           fmt_begin = n;
           n++;
           continue;
         }
       } else if (fmt_status == 1) {
-        if (m_pattern[n] == '}') {
-          fmt = m_pattern.substr(fmt_begin + 1, n - fmt_begin - 1);
+        if (pattern[n] == '}') {
+          fmt = pattern.substr(fmt_begin + 1, n - fmt_begin - 1);
           fmt_status = 0;
           n++;
           break;
         }
       }
       n++;
-      if (n == m_pattern.size()) {
+      if (n == pattern.size()) {
         if (str.empty()) {
-          str = m_pattern.substr(i + 1);
+          str = pattern.substr(i + 1);
         }
       }
     }
@@ -358,9 +474,9 @@ void LogFormatter::init() {
       vec.push_back(std::make_tuple(str, fmt, 1));
       i = n - 1;
     } else if (fmt_status == 1) {
-      std::cout << "pattern parse error: " << m_pattern << " - "
-                << m_pattern.substr(i) << std::endl;
-      m_error = true;
+      std::cout << "pattern parse error: " << pattern << " - "
+                << pattern.substr(i) << std::endl;
+      error = true;
       vec.push_back(std::make_tuple("<<pattern_error>>", fmt, 0));
     }
   }
@@ -394,18 +510,31 @@ void LogFormatter::init() {
       };
   for (auto& i : vec) {
     if (std::get<2>(i) == 0) {
-      m_items.push_back(std::make_shared<StringFormatItem>(std::get<0>(i)));
+      items.push_back(std::make_shared<StringFormatItem>(std::get<0>(i)));
     } else {
       auto it = s_format_items.find(std::get<0>(i));
       if (it == s_format_items.end()) {
-        m_items.push_back(std::make_shared<StringFormatItem>(
+        items.push_back(std::make_shared<StringFormatItem>(
             "<<error_format %" + std::get<0>(i) + ">>"));
-        m_error = true;
+        error = true;
       } else {
-        m_items.push_back(it->second(std::get<1>(i)));
+        items.push_back(it->second(std::get<1>(i)));
       }
     }
   }
+  if (error) {
+    throw std::invalid_argument(pattern);
+  }
+  return error;
+}
+
+std::string LogFormatter::format(Logger::ptr logger, LogLevel::Level level,
+                                 LogEvent::ptr event) {
+  std::stringstream ss;
+  for (auto& i : m_items) {
+    i->format(ss, logger, level, event);
+  }
+  return ss.str();
 }
 
 // MutexLock
@@ -432,6 +561,39 @@ void NormLock::unlock() {
   pthread_mutex_unlock(&m_mutex);
 }
 
+// Log dataset structure
+
+bool LogAppenderDefine::operator==(const LogAppenderDefine& oth) const {
+  return type == oth.type && level == oth.level && formatter == oth.formatter &&
+         oth.file == oth.file;
+}
+
+bool LogDefine::operator==(const LogDefine& oth) const {
+  if (appenders.size() != oth.appenders.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < oth.appenders.size(); i++) {
+    if (!(appenders[i] == oth.appenders[i])) {
+      return false;
+    }
+  }
+
+  return name == oth.name && level == oth.level && formatter == oth.formatter;
+}
+
+bool LogDefine::operator<(const LogDefine& oth) const {
+  return name < oth.name;
+}
+
+std::string LogAppenderDefine::getString() const {
+  return LexicalCast<LogAppenderDefine, std::string>()(*this);
+}
+
+std::string LogDefine::getString() const {
+  return LexicalCast<LogDefine, std::string>()(*this);
+}
+
 // LoggerManager
 LoggerManager::LoggerManager() {
   m_root.reset(new Logger("root"));
@@ -442,6 +604,70 @@ LoggerManager::LoggerManager() {
 
   m_root->addAppender(appender);
   m_loggers[m_root->getName()] = m_root;
+  init();
+}
+
+void LoggerManager::init() {
+  ConfigVar<std::set<LogDefine>>::ptr g_log_defines =
+      ddg::Config::Lookup("logs", std::set<LogDefine>(), "logs config");
+  auto func = [](const std::set<LogDefine>& old_defines,
+                 const std::set<LogDefine>& new_defines) {
+    DDG_LOG_INFO(DDG_LOG_ROOT()) << "on_logger_conf_changed";
+    // 增加
+    for (auto& i : new_defines) {
+      auto it = old_defines.find(i);
+      ddg::Logger::ptr logger;
+      if (it == old_defines.end()) {
+        logger = DDG_LOG_NAME(i.name);
+      } else {
+        if (!(i == *it)) {
+          logger = DDG_LOG_NAME(i.name);
+        } else {
+          continue;
+        }
+      }
+      logger->setLevel(i.level);
+      if (!i.formatter.empty()) {
+        logger->setFormatter(i.formatter);
+      }
+
+      logger->clearAppender();
+      for (auto& appender : i.appenders) {
+        ddg::LogAppender::ptr ap;
+        switch (appender.type) {
+          case LogAppender::STDOUT_LOG_APPENDER:
+            ap.reset(new StdoutLogAppender);
+            break;
+          case LogAppender::FILE_LOG_APPENDER:
+            ap.reset(new FileLogAppender(appender.file));
+            break;
+          default:
+            DDG_LOG_INFO(DDG_LOG_ROOT())
+                << "Logger name = " << logger->getName()
+                << " set invalid LogAppender type";
+        }
+
+        ap->setLevel(appender.level);
+        if (!appender.formatter.empty()) {
+          ap->setFormatter(std::make_shared<LogFormatter>(appender.formatter));
+        }
+        logger->addAppender(ap);
+      }
+    }
+
+    for (auto& i : old_defines) {
+      auto it = new_defines.find(i);
+      if (it == new_defines.end()) {
+        auto logger = DDG_LOG_NAME(i.name);
+        logger->setLevel(static_cast<LogLevel::Level>(
+            100));  // 设置后会立即生效，但是在使用的线程或者协程，正在使用不会报错
+        logger->clearAppender();  // 当其他进程和携程使用完后，就可以释放了
+        DDG_LOG_REMOVE(i.name);
+      }
+    }
+  };
+  g_log_defines->addListener(func);
+  DDG_LOG_DEBUG(m_root) << "LoggerManager init finish!";
 }
 
 Logger::ptr LoggerManager::getLogger(const std::string& name) {
@@ -449,10 +675,33 @@ Logger::ptr LoggerManager::getLogger(const std::string& name) {
   if (m_loggers.find(name) != m_loggers.end()) {
     return m_loggers[name];
   }
+
   Logger::ptr logger = std::make_shared<Logger>(name);
+  logger->setRoot(m_root);
+
+  m_loggers[name] = logger;
   return logger;
 }
 
-void LoggerManager::init() {}
+void LoggerManager::delLogger(const std::string& name) {
+  if (m_loggers.find(name) == m_loggers.end()) {
+    return;
+  }
+  m_loggers.erase(name);
+}
+
+std::string LoggerManager::toYamlString() {
+  YAML::Node node;
+  for (auto& i : m_loggers) {
+    node.push_back(YAML::Load(i.second->toYamlString()));
+  }
+  std::stringstream ss;
+  ss << node;
+  return ss.str();
+}
+
+std::string LoggerManager::toString() {
+  return toYamlString();
+}
 
 }  // namespace ddg

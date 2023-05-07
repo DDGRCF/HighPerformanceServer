@@ -1,0 +1,23 @@
+system:
+  port: 9999 
+  address: "127.0.0.1"
+logs:
+  - name: root
+    level: info
+    formatter: "%d{%Y-%m-%d %H:%M:%S}%T%t%T%F%T[%p]%T<%f:%l>%T%m%n"
+    appenders: 
+      - type: FileLogAppender
+        level: info
+        file: /home/r/Scripts/C++/my_sylar/logs/root.txt
+        formatter: "%d{%Y-%m-%d}%T<%f:%l>%T%m%n"
+      - type: StdoutLogAppender
+        level: debug
+  - name: system
+    level: debug
+    appenders: 
+      - type: FileLogAppender
+        level: debug
+        file: /home/r/Scripts/C++/my_sylar/logs/system.txt
+      - type: StdoutLogAppender
+        level: info
+
