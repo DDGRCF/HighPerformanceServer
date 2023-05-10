@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "ddg/mutex.h"
 #include "ddg/singleton.h"
 #include "ddg/utils.h"
 #include "lexicalcast.h"
@@ -97,7 +98,8 @@ class LogEvent {
            const uint64_t& thread_id, const uint64_t& fiber_id,
            const uint64_t& time);
 
-  typedef std::shared_ptr<LogEvent> ptr;
+  // typedef std::shared_ptr<LogEvent> ptr;
+  using ptr = std::shared_ptr<LogEvent>;
 
   std::shared_ptr<Logger> getLogger() const { return m_logger; }
 
@@ -154,9 +156,12 @@ class LogEventWrap {
 // LogFormatter
 class LogFormatter {
  public:
+  using RWMutexType = RWMutex;
+
   class FormatItem {
    public:
-    typedef std::shared_ptr<FormatItem> ptr;
+    // typedef std::shared_ptr<FormatItem> ptr;
+    using ptr = std::shared_ptr<FormatItem>;
 
     virtual ~FormatItem() {}
 
@@ -169,19 +174,25 @@ class LogFormatter {
  public:
   LogFormatter(const std::string& pattern);
 
-  typedef std::shared_ptr<LogFormatter> ptr;
+  // typedef std::shared_ptr<LogFormatter> ptr;
+  using ptr = std::shared_ptr<LogFormatter>;
+
   std::string format(std::shared_ptr<Logger> logger, LogLevel::Level level,
                      LogEvent::ptr event);
+  bool setPattern(const std::string& pattern);
 
-  bool getError() const { return m_error; }
+  bool getError() const;
 
-  std::string getPattern() const { return m_pattern; }
+  std::string getPattern() const;
 
   static bool checkValid(const std::string& pattern);
   static bool initPattern(const std::string& pattern,
                           std::vector<FormatItem::ptr>& items);
 
+  RWMutexType& getMutex() { return m_rwmutex; }
+
  private:
+  mutable RWMutexType m_rwmutex;
   std::string m_pattern;
   std::vector<FormatItem::ptr> m_items;
   bool m_error = false;
@@ -190,6 +201,9 @@ class LogFormatter {
 // LogAppender
 class LogAppender {
  public:
+  using RWMutexType = RWMutex;
+  using MutexType = SpinLock;
+
   enum Type {
     FILE_LOG_APPENDER = 0,
     STDOUT_LOG_APPENDER = 1,
@@ -199,49 +213,59 @@ class LogAppender {
   static LogAppender::Type FromString(const std::string& type);
   static std::string ToString(LogAppender::Type type);
 
-  typedef std::shared_ptr<LogAppender> ptr;
+  using ptr = std::shared_ptr<LogAppender>;
 
   virtual ~LogAppender() {}
 
   virtual void log(std::shared_ptr<Logger> logger, LogLevel::Level level,
                    LogEvent::ptr event) = 0;
 
-  LogFormatter::ptr getFormatter() const { return m_formatter; }
+  LogFormatter::ptr getFormatter() const;
 
-  void setFormatter(LogFormatter::ptr val) { m_formatter = val; }
+  void setFormatter(LogFormatter::ptr val);
 
-  void setLevel(LogLevel::Level level) { m_level = level; }
+  void setLevel(LogLevel::Level level);
 
-  virtual std::string toYamlString() = 0;
+  virtual std::string toYamlString() const = 0;
 
-  virtual std::string toString() = 0;
+  virtual std::string toString() const = 0;
+
+  RWMutexType& getRWMutex() { return m_rwmutex; }
+
+  MutexType& getMutex() { return m_mutex; }
 
  protected:
+  mutable RWMutexType m_rwmutex;
+  mutable MutexType m_mutex;
   LogLevel::Level m_level = LogLevel::DEBUG;
   LogFormatter::ptr m_formatter;
 };
 
 class StdoutLogAppender : public LogAppender {
  public:
-  typedef std::shared_ptr<LogAppender> ptr;
+  // typedef std::shared_ptr<LogAppender> ptr;
+  using ptr = std::shared_ptr<LogAppender>;
+
   void log(std::shared_ptr<Logger> logger, LogLevel::Level level,
            LogEvent::ptr event) override;
 
-  std::string toYamlString() override;
-  std::string toString() override;
+  std::string toYamlString() const override;
+  std::string toString() const override;
 };
 
 class FileLogAppender : public LogAppender {
  public:
   FileLogAppender(const std::string& file = "/tmp/ddg_server.txt");
-  typedef std::shared_ptr<FileLogAppender> ptr;
+  // typedef std::shared_ptr<FileLogAppender> ptr;
+  using ptr = std::shared_ptr<FileLogAppender>;
+
   void log(std::shared_ptr<Logger> logger, LogLevel::Level level,
            LogEvent::ptr event) override;
   bool reopen();
 
-  std::string toYamlString() override;
+  std::string toYamlString() const override;
 
-  std::string toString() override;
+  std::string toString() const override;
 
  private:
   std::string m_filename;
@@ -252,7 +276,8 @@ class FileLogAppender : public LogAppender {
 class Logger : public std::enable_shared_from_this<
                    Logger> {  // 启动这个后，会自动共享这个
  public:
-  typedef std::shared_ptr<Logger> ptr;
+  using ptr = std::shared_ptr<Logger>;
+  using RWMutexType = RWMutex;
 
   Logger(const std::string& name = "root");
 
@@ -271,26 +296,27 @@ class Logger : public std::enable_shared_from_this<
   void delAppender(LogAppender::ptr appender);
   void clearAppender();
 
-  std::string getName() const { return m_name; }
-
   void setLevel(LogLevel::Level level);
 
-  LogLevel::Level getLevel() const { return m_level; }
+  LogLevel::Level getLevel() const;
+
+  std::string getName() const;
 
   void setFormatter(LogFormatter::ptr formatter);
   void setFormatter(const std::string& pattern);
 
-  LogFormatter::ptr getFormatter() const { return m_formatter; }
+  LogFormatter::ptr getFormatter() const;
 
-  std::string toYamlString();
+  std::string toYamlString() const;
 
-  std::string toString();
+  std::string toString() const;
 
-  const std::list<LogAppender::ptr>& getAppenders() const {
-    return m_appenders;
-  }
+  const std::list<LogAppender::ptr>& getAppenders() const;
+
+  RWMutexType& getMutex() { return m_rwmutex; }
 
  private:
+  mutable RWMutexType m_rwmutex;
   std::string m_name;
   LogLevel::Level m_level;
   std::list<LogAppender::ptr> m_appenders;
@@ -298,55 +324,37 @@ class Logger : public std::enable_shared_from_this<
   Logger::ptr m_root = nullptr;
 };
 
-class MutexLock {
- public:
-  typedef std::shared_ptr<MutexLock> ptr;
-
-  class LockGuard;
-
-  virtual ~MutexLock() {}
-
-  virtual void lock() = 0;
-  virtual void unlock() = 0;
-};
-
-class NormLock : public MutexLock {
- public:
-  typedef pthread_mutex_t LockType;
-  void lock() override;
-  void unlock() override;
-
- private:
-  LockType m_mutex;
-};
-
-// class SpinLock : public MutexLock {};
-
 class LoggerManager {
  public:
-  typedef NormLock MutexType;
+  using ptr = std::shared_ptr<LoggerManager>;
+  using RWMutexType = RWMutex;
 
   LoggerManager();
+  ~LoggerManager();
 
-  Logger::ptr getRoot() const { return m_root; }
+  void init();  // extra init for expanding
+
+  Logger::ptr getRoot() const;
 
   Logger::ptr getLogger(const std::string& name);
 
   void delLogger(const std::string& name);
 
-  void init();  // extra init for expanding
-
   std::unordered_map<std::string, Logger::ptr> m_logger;
 
-  std::string toYamlString();
+  std::string toYamlString() const;
 
-  std::string toString();
+  std::string toString() const;
+
+  RWMutexType& getMutex() { return m_rwmutex; }
 
  private:
-  MutexType m_mutex;
   Logger::ptr m_root;
   std::unordered_map<std::string, Logger::ptr> m_loggers;
+  mutable RWMutexType m_rwmutex;
 };
+
+using LoggerMgr = Singleton<LoggerManager>;
 
 // Log dataset structure
 struct LogAppenderDefine {
@@ -358,7 +366,6 @@ struct LogAppenderDefine {
   bool operator==(const LogAppenderDefine& oth) const;
 
   std::string getString() const;
-  // friend std::ostream& operator<<(std::ostream& os, const LogAppenderDefine& define);
 };
 
 struct LogDefine {
@@ -371,10 +378,7 @@ struct LogDefine {
   bool operator<(const LogDefine& oth) const;
 
   std::string getString() const;
-  // friend std::ostream& operator<<(std::ostream& os, const LogDefine& define);
 };
-
-typedef Singleton<LoggerManager> LoggerMgr;
 
 // LexicalCast
 template <>

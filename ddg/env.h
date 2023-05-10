@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include "ddg/singleton.h"
 
 namespace ddg {
@@ -17,5 +18,6 @@ class Env {
   std::string get(const std::string& key,
                   const std::string& default_value = "");
 };
+}  // namespace ddg
 
 #endif

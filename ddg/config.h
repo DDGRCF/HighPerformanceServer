@@ -10,30 +10,35 @@
 #include <typeinfo>
 #include <unordered_map>
 #include <unordered_set>
+
 #include "ddg/lexicalcast.h"
 #include "ddg/log.h"
-#include "utils.h"
+#include "ddg/mutex.h"
+#include "ddg/utils.h"
 
 namespace ddg {
 
 class ConfigVarBase {
  public:
-  typedef std::shared_ptr<ConfigVarBase> ptr;
+  using ptr = std::shared_ptr<ConfigVarBase>;
+  using RWMutexType = RWMutex;
+
   ConfigVarBase(const std::string& name, const std::string& description = "");
 
-  virtual ~ConfigVarBase() {}
+  virtual ~ConfigVarBase();
 
-  virtual std::string toString() = 0;
+  virtual std::string toString() const = 0;
 
   virtual bool fromString(const std::string& val) = 0;
 
-  const std::string& getName() const { return m_name; }
+  const std::string& getName() const;
 
-  const std::string& getDescription() const { return m_description; }
+  const std::string& getDescription() const;
 
   virtual std::string getTypeName() const = 0;
 
  protected:
+  mutable RWMutexType m_rwmutex;
   std::string m_name;
   std::string m_description;
 };
@@ -42,19 +47,17 @@ template <class T, class FromStr = LexicalCast<std::string, T>,
           class ToStr = LexicalCast<T, std::string>>
 class ConfigVar : public ConfigVarBase {
  public:
-  typedef std::shared_ptr<ConfigVar> ptr;
-
-  typedef std::function<void(const T& old_value, const T& new_value)>
-      on_change_cb;  // 回调函数监视事件
+  using ptr = std::shared_ptr<ConfigVar>;
+  using Callback = std::function<void(const T&, const T&)>;
 
   template <class K>
-  friend std::ostream& operator<<(std::ostream& os, ConfigVar<K> var);
+  friend std::ostream& operator<<(std::ostream& os, const ConfigVar<K>& var);
 
   ConfigVar(const std::string& name, const T& default_value,
             const std::string& description = "")
       : ConfigVarBase(name, description), m_val(default_value) {}
 
-  std::string toString() override {
+  std::string toString() const override {
     try {
       return ToStr()(m_val);
     } catch (std::exception& e) {
@@ -80,6 +83,7 @@ class ConfigVar : public ConfigVarBase {
   }
 
   void setValue(const T& v) {
+    RWMutexType::WriteLock lock(m_rwmutex);
     if (m_val == v) {
       return;
     }
@@ -93,7 +97,8 @@ class ConfigVar : public ConfigVarBase {
 
   std::string getTypeName() const override { return TypeToName<T>(); }
 
-  uint64_t addListener(on_change_cb cb) {
+  uint64_t addListener(Callback cb) {
+    RWMutexType::WriteLock lock(m_rwmutex);
     for (uint64_t i = 0; i <= s_func_id; i++) {
       if (m_cbs.find(i) == m_cbs.end()) {
         m_cbs.insert(std::make_pair(i, cb));
@@ -105,32 +110,38 @@ class ConfigVar : public ConfigVarBase {
     return s_func_id;
   }
 
-  void addListener(uint64_t key, on_change_cb cb) {
+  void addListener(uint64_t key, Callback cb) {
+    RWMutexType::WriteLock lock(m_rwmutex);
     if (key > s_func_id) {
       s_func_id = key;
     }
     m_cbs.insert(std::make_pair(key, cb));
   }
 
-  void dealListener(uint64_t key) { m_cbs.earse(key); }
+  void dealListener(uint64_t key) {
+    RWMutexType::WriteLock lock(m_rwmutex);
+    m_cbs.earse(key);
+  }
 
-  void clearListener() { m_cbs.clear(); }
+  void clearListener() {
+    RWMutexType::WriteLock lock(m_rwmutex);
+    m_cbs.clear();
+  }
 
-  on_change_cb getListener(uint64_t key) {
+  Callback getListener(uint64_t key) {
+    RWMutexType::ReadLock lock(m_rwmutex);
     auto it = m_cbs.find(key);
     return it == m_cbs.end() ? nullptr : it->second;
   }
 
  private:
   T m_val;
-
   uint64_t s_func_id = 0;
-  std::unordered_map<uint64_t, on_change_cb>
-      m_cbs;  // 加map是因为回调函数没有等于
+  std::unordered_map<uint64_t, Callback> m_cbs;  // 加map是因为回调函数没有等于
 };
 
 template <class T>
-std::ostream& operator<<(std::ostream& os, ConfigVar<T> var) {
+std::ostream& operator<<(std::ostream& os, const ConfigVar<T>& var) {
   os << var.toString();
   return os;
 }
@@ -138,16 +149,20 @@ std::ostream& operator<<(std::ostream& os, ConfigVar<T> var) {
 // Config
 class Config {
  public:
-  typedef std::unordered_map<std::string, ConfigVarBase::ptr> ConfigVarMap;
+  using ConfigVarMap = std::unordered_map<std::string, ConfigVarBase::ptr>;
+  using RWMutexType = RWMutex;
 
   template <class T>
   using ConfigVarPtr = typename ConfigVar<T>::ptr;
+
+  using VisitCallback = std::function<void(ConfigVarBase::ptr)>;
 
   static const std::string kValidSet;
 
   template <class T>
   static ConfigVarPtr<T> Lookup(const std::string& name, const T& default_value,
                                 const std::string& description = "") {
+    RWMutexType::WriteLock lock(GetMutex());
 
     auto it = GetDatas().find(name);
     if (it != GetDatas().end()) {
@@ -171,12 +186,12 @@ class Config {
     ConfigVarPtr<T> elem =
         std::make_shared<ConfigVar<T>>(name, default_value, description);
     GetDatas().insert(std::make_pair(name, elem));
-
     return elem;
   }
 
   template <class T>
   static ConfigVarPtr<T> Lookup(const std::string& name) {
+    RWMutexType::ReadLock lock(GetMutex());
     auto it = GetDatas().find(name);
     if (it == GetDatas().end()) {
       return nullptr;
@@ -192,10 +207,17 @@ class Config {
 
   static ConfigVarBase::ptr LookupBase(const std::string& name);
 
+  static void Visit(VisitCallback cb);
+
  private:
   // static ConfigVarMap s_datas;  // 程序开始就初始化
   // 在第一次调用的时候才初始化，避免慢启动问题，控制创建时机，避免不必要的开销
   // 最主要的原因是保证static初始化元素之间没有初始化顺序，通过这样能够明确调用顺序
+  static RWMutexType& GetMutex() {
+    static RWMutexType m_rwmutex;
+    return m_rwmutex;
+  }
+
   static ConfigVarMap& GetDatas() {
     static ConfigVarMap s_datas;
     return s_datas;
