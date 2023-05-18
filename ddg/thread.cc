@@ -3,9 +3,10 @@
 
 namespace ddg {
 
+static Logger::ptr g_logger = DDG_LOG_NAME("system");
+
 static thread_local Thread* t_thread = nullptr;
 static thread_local std::string t_thread_name = "UNKNOW";
-static auto g_logger = DDG_LOG_ROOT();
 
 Thread* Thread::GetThis() {
   return t_thread;
@@ -74,7 +75,7 @@ void* Thread::run(void* arg) {
 
   t_thread = thread;
   t_thread_name = thread->m_name;
-  thread->m_id = ddg::getThreadId();
+  thread->m_id = ddg::GetThreadId();
   pthread_setname_np(pthread_self(), thread->m_name.substr(0, 10).c_str());
 
   Callback cb;

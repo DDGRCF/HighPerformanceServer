@@ -27,7 +27,7 @@
   if (logger->getLevel() <= level)                                       \
   ddg::LogEventWrap(std::make_shared<ddg::LogEvent>(                     \
                         logger, level, __FILE__, __LINE__, 0,            \
-                        ddg::getThreadId(), ddg::getFiberId(), time(0))) \
+                        ddg::GetThreadId(), ddg::GetFiberId(), time(0))) \
       .getSS()
 
 #define DDG_LOG_DEBUG(logger) DDG_LOG_LEVEL(logger, ddg::LogLevel::DEBUG)
@@ -44,7 +44,7 @@
   if (logger->getLevel() <= level)                                       \
   ddg::LogEventWrap(std::make_shared<ddg::LogEvent>(                     \
                         logger, level, __FILE__, __LINE__, 0,            \
-                        ddg::getThreadId(), ddg::getFiberId(), time(0))) \
+                        ddg::GetThreadId(), ddg::GetFiberId(), time(0))) \
       .getEvent()                                                        \
       ->format(fmt, __VA_ARGS__)
 

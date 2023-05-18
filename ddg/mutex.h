@@ -58,50 +58,96 @@ class CustomRWLock {
 template <class T>
 class ScopedLockImpl : virtual public NonCopyable, CustomLock {
  public:
-  explicit ScopedLockImpl(T& mutex) : m_mutex(mutex) { m_mutex.lock(); }
+  explicit ScopedLockImpl(T& mutex) : m_mutex(mutex) {
+    m_mutex.lock();
+    m_islocked = true;
+  }
 
-  explicit ScopedLockImpl(T* mutex) : m_mutex(*mutex) { m_mutex.lock(); }
+  explicit ScopedLockImpl(T* mutex) : m_mutex(*mutex) {
+    m_mutex.lock();
+    m_islocked = true;
+  }
 
   ~ScopedLockImpl() { unlock(); }
 
- protected:
-  void lock() override { m_mutex.lock(); }
+ public:
+  void unlock() override {
+    if (m_islocked) {
+      m_mutex.unlock();
+      m_islocked = false;
+    }
+  }
 
-  void unlock() override { m_mutex.unlock(); }
+  void lock() override {
+    if (!m_islocked) {
+      m_mutex.lock();
+      m_islocked = true;
+    }
+  }
 
+ private:
   T& m_mutex;
+  bool m_islocked;
 };
 
 template <class T>
 class ReadScopedLockImpl {
  public:
-  ReadScopedLockImpl(T& mutex) : m_mutex(mutex) { m_mutex.rdlock(); }
+  ReadScopedLockImpl(T& mutex) : m_mutex(mutex) {
+    m_mutex.rdlock();
+    m_islocked = true;
+  }
 
   ~ReadScopedLockImpl() { unlock(); }
 
- protected:
-  void lock() { m_mutex.rdlock(); }
+ public:
+  void lock() {
+    if (!m_islocked) {
+      m_mutex.rdlock();
+      m_islocked = true;
+    }
+  }
 
-  void unlock() { m_mutex.unlock(); }
+  void unlock() {
+    if (m_islocked) {
+      m_mutex.unlock();
+      m_islocked = false;
+    }
+  }
 
  private:
   T& m_mutex;
+  bool m_islocked;
 };
 
 template <class T>
 class WriteScopedLockImpl {
  public:
-  WriteScopedLockImpl(T& mutex) : m_mutex(mutex) { m_mutex.wrlock(); }
+  WriteScopedLockImpl(T& mutex) : m_mutex(mutex) {
+    m_mutex.wrlock();
+    m_islocked = false;
+  }
 
   ~WriteScopedLockImpl() { unlock(); }
 
- protected:
-  void lock() { m_mutex.wrlock(); }
+ public:
+  void lock() {
+    if (!m_islocked) {
+      m_mutex.wrlock();
+      m_islocked = true;
+    }
+  }
 
-  void unlock() { m_mutex.unlock(); }
+  void unlock() {
+    if (m_islocked) {
+      m_mutex.unlock();
+      m_islocked = false;
+    }
+  }
 
  private:
   T& m_mutex;
+  bool m_islocked;
 };
 
 class NullLock : public NonCopyable, CustomLock {

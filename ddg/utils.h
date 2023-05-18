@@ -3,12 +3,16 @@
 
 #include <cxxabi.h>
 #include <stdint.h>
+#include <string>
+#include <vector>
+
+#include "ddg/noncopyable.h"
 
 namespace ddg {
 
-uint64_t getThreadId();
+uint64_t GetThreadId();
 
-uint64_t getFiberId();
+uint64_t GetFiberId();
 
 template <typename T>
 const char* TypeToName() {
@@ -16,6 +20,25 @@ const char* TypeToName() {
       abi::__cxa_demangle(typeid(T).name(), nullptr, nullptr, nullptr);
   return s_name;
 }
+
+void BackTrace(std::vector<std::string>& bt, int size = 64, int skip = 1);
+
+std::string BacktraceToString(int size = 64, int skip = 1,
+                              const std::string& prefix = "");
+
+class ScopedMalloc : public NonCopyable {
+ public:
+  explicit ScopedMalloc(size_t size) noexcept;
+  ~ScopedMalloc();
+
+  template <class T>
+  T getPointer() const {
+    return static_cast<T>(m_vptr);
+  }
+
+ private:
+  void* m_vptr;
+};
 
 }  // namespace ddg
 

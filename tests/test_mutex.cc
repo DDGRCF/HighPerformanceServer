@@ -2,13 +2,14 @@
 #include "ddg/mutex.h"
 #include "pthread.h"
 
-int sum = 0;
+static int sum = 0;
 
-auto g_logger = DDG_LOG_ROOT();
-ddg::SpinLock spinlock;
-ddg::CASLock caslock;
-ddg::Mutex mutexlock;
-ddg::RWMutex rwlock;
+static auto g_logger = DDG_LOG_ROOT();
+
+static ddg::SpinLock spinlock;
+static ddg::CASLock caslock;
+static ddg::Mutex mutexlock;
+static ddg::RWMutex rwlock;
 
 void* run(void* arg) {
   for (int i = 0; i < 500; i++) {
@@ -31,7 +32,7 @@ void* rdrun(void* arg) {
   return static_cast<void*>(0);
 }
 
-const int kNum = 20;
+static const int kNum = 20;
 
 int main() {
   int ret = 0;

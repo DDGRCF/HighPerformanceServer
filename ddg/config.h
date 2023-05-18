@@ -112,9 +112,14 @@ class ConfigVar : public ConfigVarBase {
 
   void addListener(uint64_t key, Callback cb) {
     RWMutexType::WriteLock lock(m_rwmutex);
+    if (!funcIdGrowthValid(key)) {
+      throw std::logic_error("ConfigVar::addListener invalid key");
+    }
+
     if (key > s_func_id) {
       s_func_id = key;
     }
+
     m_cbs.insert(std::make_pair(key, cb));
   }
 
@@ -132,6 +137,21 @@ class ConfigVar : public ConfigVarBase {
     RWMutexType::ReadLock lock(m_rwmutex);
     auto it = m_cbs.find(key);
     return it == m_cbs.end() ? nullptr : it->second;
+  }
+
+ private:
+  bool funcIdGrowthValid(uint64_t id) {
+    static const uint64_t func_id_threshold = 256;
+    if (s_func_id < func_id_threshold) {
+      if (id < s_func_id * 2) {
+        return true;
+      }
+    } else {
+      if (id < (s_func_id + 3 * func_id_threshold) / 4 + s_func_id) {
+        return true;
+      }
+    }
+    return false;
   }
 
  private:

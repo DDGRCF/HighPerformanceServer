@@ -2,7 +2,7 @@
 #include "ddg/mutex.h"
 #include "ddg/thread.h"
 
-const size_t kNum = 50000;
+static const size_t kNum = 50000;
 
 int main() {
   auto g_logger = DDG_LOG_ROOT();
