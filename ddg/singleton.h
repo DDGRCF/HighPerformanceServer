@@ -16,9 +16,7 @@ class Singleton {
   Singleton() = delete;
   ~Singleton() = delete;
   Singleton(const Singleton&) = delete;
-  Singleton& operator=(const Singleton&);
-
- private:
+  Singleton& operator=(const Singleton&) = delete;
 };
 
 template <class T, class X = void, int N = 0>  // TODO:
@@ -32,9 +30,7 @@ class SingletonPtr {
   SingletonPtr() = delete;
   ~SingletonPtr() = delete;
   SingletonPtr(const SingletonPtr&) = delete;
-  SingletonPtr& operator=(const SingletonPtr&);
-
- private:
+  SingletonPtr& operator=(const SingletonPtr&) = delete;
 };
 
 }  // namespace ddg

@@ -21,10 +21,12 @@ const char* TypeToName() {
   return s_name;
 }
 
-void BackTrace(std::vector<std::string>& bt, int size = 64, int skip = 1);
-
 std::string BacktraceToString(int size = 64, int skip = 1,
                               const std::string& prefix = "");
+
+uint64_t GetCurrentMicroSecond();
+
+uint64_t GetCurrentMilliSecond();
 
 class ScopedMalloc : public NonCopyable {
  public:
@@ -35,6 +37,8 @@ class ScopedMalloc : public NonCopyable {
   T getPointer() const {
     return static_cast<T>(m_vptr);
   }
+
+  void* getRawPointer() const { return m_vptr; }
 
  private:
   void* m_vptr;

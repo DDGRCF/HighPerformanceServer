@@ -1,12 +1,15 @@
 #include "ddg/scheduler.h"
+
+#include "ddg/hook.h"
 #include "ddg/log.h"
 #include "macro.h"
 
 namespace ddg {
 
-static Logger::ptr g_logger = DDG_LOG_NAME("system");
+static Logger::ptr g_logger = DDG_LOG_ROOT();
 
 static thread_local Scheduler* t_scheduler = nullptr;
+
 static thread_local Fiber* t_scheduler_fiber = nullptr;
 
 Scheduler::Scheduler(size_t threads, bool use_caller, const std::string& name)
@@ -61,8 +64,12 @@ void Scheduler::start() {
 
 void Scheduler::stop() {
   m_autoStop = true;
-  if (m_rootFiber && (m_rootFiber->getState() == Fiber::TERM ||
-                      m_rootFiber->getState() == Fiber::EXCEPT)) {
+  if (isStoped()) {
+    return;
+  }
+
+  if (m_rootFiber && (m_rootFiber->getState() == Fiber::State::TERM ||
+                      m_rootFiber->getState() == Fiber::State::EXCEPT)) {
     DDG_LOG_DEBUG(g_logger) << this << " stopped";
     m_stopping = true;
     if (isStoped()) {
@@ -86,9 +93,12 @@ void Scheduler::stop() {
     tickle();
   }
 
-  if (m_rootFiber) {  // TODO:
+  if (m_rootFiber) {
+    m_rootFiber->setState(Fiber::State::EXEC);
+
     if (!isStoped()) {
-      m_rootFiber->call();
+      m_rootFiber
+          ->call();  // 这里有个问题，就是无法在当前协程里面再添加协程，因为不是主要是因为不是主携程调度，swapIn的时候切换的是两个协程
     }
   }
 
@@ -104,7 +114,7 @@ void Scheduler::stop() {
 }
 
 bool Scheduler::isStoped() {
-  return m_autoStop && m_threadCount == 0 && m_stopping && m_fibers.empty() &&
+  return m_autoStop && m_stopping && m_fibers.empty() &&
          m_activeThreadCount == 0;
 }
 
@@ -121,8 +131,8 @@ Fiber* Scheduler::GetMainFiber() {
 }
 
 void Scheduler::run() {
-  SetThis();  // 不必要
   DDG_LOG_DEBUG(g_logger) << "into run ...";
+  SetThis();
   if (ddg::GetThreadId() != m_rootThread) {
     t_scheduler_fiber = Fiber::GetThis().get();
   }
@@ -133,11 +143,13 @@ void Scheduler::run() {
 
   while (true) {
     bool is_active = false;
+    bool tickle_me = false;
     {
       MutexType::Lock lock(m_mutex);
       for (auto it = m_fibers.begin(); it != m_fibers.end(); it++) {
 #define itt (*it)
         if (itt->thread != 0 && itt->thread == GetThreadId()) {
+          tickle_me = true;
           continue;
         }
 
@@ -146,15 +158,15 @@ void Scheduler::run() {
           auto state = fiber->getState();
           bool is_skip = false;
           switch (state) {
-            case Fiber::INIT:
-            case Fiber::HOLD:  // 预备
-              fiber->setState(Fiber::READY);
+            case Fiber::State::INIT:
+            case Fiber::State::HOLD:  // 预备
+              fiber->setState(Fiber::State::READY);
               is_skip = true;
               break;
-            case Fiber::EXEC:  // 挂起
+            case Fiber::State::EXEC:  // 挂起
               is_skip = true;
               break;
-            case Fiber::READY:
+            case Fiber::State::READY:
               is_skip = false;
               break;
             default:
@@ -171,9 +183,14 @@ void Scheduler::run() {
         m_fibers.erase(it++);
         m_activeThreadCount++;
         is_active = true;
+        tickle_me = is_active;
         break;
 #undef itt
       }
+    }
+
+    if (tickle_me) {
+      tickle();
     }
 
     if (is_active && (ft->fiber || ft->cb)) {
@@ -185,19 +202,20 @@ void Scheduler::run() {
         ft->cb = nullptr;
         ft->fiber = fiber;
       }
+
+      fiber->setState(Fiber::State::Type::READY);
       fiber->swapIn();
       m_activeThreadCount--;
-      auto state = fiber->getState();
-      switch (state) {
-        case Fiber::EXEC:  // 对于在运行可能忘记换状态的情况
-          fiber->setState(Fiber::HOLD);
-        case Fiber::HOLD:
-        case Fiber::READY:
-          schedule(ft);
-          break;
-        default:
-          break;
+      auto state = fiber->getState();  // 如果是调用当前携程的话没法释放
+      // DDG_LOG_DEBUG(g_logger)
+      // << "come here "
+      // << "Fiber State: " << Fiber::State::ToString(fiber->getState());
+      if (state == Fiber::State::READY) {
+        schedule(ft);
+      } else if (state != Fiber::State::TERM && state != Fiber::State::EXCEPT) {
+        ft->fiber->setState(Fiber::State::HOLD);
       }
+
       ft.reset();  // 重新设置智能指针
     } else {
       if (is_active) {
@@ -210,10 +228,10 @@ void Scheduler::run() {
           m_idleThreadCount++;
           fiber->swapIn();
           m_idleThreadCount--;
-          if (fiber->getState() == Fiber::EXEC) {
-            fiber->setState(Fiber::HOLD);
-          } else if (fiber->getState() == Fiber::TERM ||
-                     fiber->getState() == Fiber::EXCEPT) {
+          if (fiber->getState() == Fiber::State::EXEC) {
+            fiber->setState(Fiber::State::HOLD);
+          } else if (fiber->getState() == Fiber::State::TERM ||
+                     fiber->getState() == Fiber::State::EXCEPT) {
             idle_ft.reset();
           }
         }

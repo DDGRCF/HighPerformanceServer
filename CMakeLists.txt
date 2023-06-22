@@ -16,7 +16,7 @@ aux_source_directory(${CMAKE_PROJECT_NAME} LIB_SRC)
 
 add_library(${CMAKE_PROJECT_NAME} SHARED ${LIB_SRC})
 
-target_link_libraries(${CMAKE_PROJECT_NAME} yaml-cpp)
+target_link_libraries(${CMAKE_PROJECT_NAME} yaml-cpp dl)
 
 include_directories(./)
 
@@ -29,5 +29,5 @@ foreach(filepath ${TEST_SRC})
   get_filename_component(filename ${filepath} NAME_WLE)
   add_executable(${filename} ${filepath})
   add_dependencies(${filename} ${CMAKE_PROJECT_NAME})
-  target_link_libraries(${filename} ${CMAKE_PROJECT_NAME})
+  target_link_libraries(${filename} ${CMAKE_PROJECT_NAME} dl)
 endforeach()

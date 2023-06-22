@@ -14,22 +14,34 @@ IOManager::IOManager(size_t threads, bool use_caller, const std::string& name)
   m_epfd = epoll_create(5000);
   DDG_ASSERT(m_epfd > 0);
   int ret = pipe(m_tickle_fds);
-  DDG_ASSERT(!ret);
+  DDG_ASSERT(ret == 0);
 
   epoll_event ev;
   memset(&ev, 0, sizeof(ev));
   ev.events = EPOLLIN | EPOLLET;
   ev.data.fd = m_tickle_fds[0];  // 接收
-  ret = fcntl(ev.data.fd, F_SETFD, O_NONBLOCK);
-  DDG_ASSERT(!ret);
-  ret = epoll_ctl(m_epfd, EPOLL_CTL_ADD, ev.data.fd, &ev);
-  DDG_ASSERT(!ret);
+  ret = fcntl(m_tickle_fds[0], F_SETFL, O_NONBLOCK);
+  DDG_ASSERT(ret == 0);
+  ret = epoll_ctl(m_epfd, EPOLL_CTL_ADD, m_tickle_fds[0], &ev);
+  DDG_ASSERT(ret == 0);
   contextResize(32);
-
-  start();
 }
 
-IOManager::~IOManager() {}
+IOManager::~IOManager() {
+  if (!Scheduler::isStoped()) {
+    stop();
+  }
+
+  close(m_epfd);
+  close(m_tickle_fds[0]);
+  close(m_tickle_fds[1]);
+
+  for (size_t i = 0; i < m_fdContext.size(); i++) {
+    if (m_fdContext[i]) {
+      delete m_fdContext[i];
+    }
+  }
+}
 
 void IOManager::contextResize(size_t size) {
   m_fdContext.resize(size);
@@ -92,7 +104,7 @@ int IOManager::addEvent(int fd, Event event, Callback cb) {
     event_ctx.cb.swap(cb);
   } else {
     event_ctx.fiber = Fiber::GetThis();
-    DDG_ASSERT_MSG(event_ctx.fiber->getState() == Fiber::EXEC,
+    DDG_ASSERT_MSG(event_ctx.fiber->getState() == Fiber::State::EXEC,
                    "state = " << event_ctx.fiber->getState());
   }
 
@@ -215,7 +227,7 @@ bool IOManager::cancelAll(int fd) {
   return true;
 }
 
-IOManager* IOManager::GetThis(int fd) {
+IOManager* IOManager::GetThis() {
   return dynamic_cast<IOManager*>(Scheduler::GetThis());
 }
 
@@ -224,19 +236,21 @@ void IOManager::tickle() {
     return;
   }
   int ret = write(m_tickle_fds[1], "T", 1);
-  DDG_ASSERT(ret == 0);
+  DDG_ASSERT(ret == 1);
 }
 
 bool IOManager::isStoped() {
   return m_pendingEventCount == 0 && Scheduler::isStoped();
 }
 
-bool IOManager::isStoped(uint64_t timeout) {
+bool IOManager::isStoped(uint64_t& timeout) {
+  timeout = getNextTimer();
   return timeout == ~0ull && isStoped();
 }
 
 void IOManager::idle() {
   DDG_LOG_DEBUG(g_logger) << "in idle ...";
+
   const uint64_t MAX_EVENTS = 256;
   epoll_event* evs = new epoll_event[MAX_EVENTS];
   std::shared_ptr<epoll_event> shared_events(
@@ -245,7 +259,7 @@ void IOManager::idle() {
   while (true) {
     uint64_t next_timeout = 0;
     if (DDG_UNLIKELY(isStoped(next_timeout))) {
-      DDG_LOG_INFO(g_logger) << "name = " << getName() << " idle stop exit";
+      DDG_LOG_DEBUG(g_logger) << "name = " << getName() << " idle stop exit";
       break;
     }
 
@@ -259,30 +273,39 @@ void IOManager::idle() {
       } else {
         next_timeout = MAX_TIMEOUT;
       }
+
       ret = epoll_wait(m_epfd, evs, MAX_EVENTS, static_cast<int>(next_timeout));
+
       if (ret < 0 && errno == EINTR) {
+        if (errno == EINTR) {
+          DDG_LOG_DEBUG(g_logger)
+              << "IOManager::idle epoll_wait has been interrupted";
+        }
         continue;
       } else {
         break;
       }
     } while (true);
 
-    // std::vector<Callback> cbs;  // TODO:
-    // if (!cbs.empty()) {
-    // schedule(cbs.begin(), cbs.end());
-    // cbs.clear();
-    // }
+    std::vector<Callback> cbs;
+    listExpiredCallback(cbs);
+    if (!cbs.empty()) {
+      schedule(cbs.begin(), cbs.end());
+      cbs.clear();
+    }
 
     for (int i = 0; i < ret; i++) {
       epoll_event& ev = evs[i];
       if (ev.data.fd == m_tickle_fds[0]) {
         uint8_t dummy[256];
-        while (read(m_tickle_fds[0], dummy, sizeof(dummy)) > 0)
-          ;
+        while (read(m_tickle_fds[0], dummy, sizeof(dummy)) > 0) {
+          DDG_LOG_DEBUG(g_logger) << dummy;
+        };
         continue;
       }
       FdContext* fd_ctx = static_cast<FdContext*>(ev.data.ptr);
       FdContext::MutexType::Lock lock(fd_ctx->mutex);
+
       if (ev.events & (EPOLLIN | EPOLLHUP)) {  // EPOLLHUB用于半关闭提醒
         ev.events |= (EPOLLIN | EPOLLHUP) & fd_ctx->events;
       }
@@ -324,14 +347,20 @@ void IOManager::idle() {
     }
 
     Fiber::ptr cur = Fiber::GetThis();  // 不需要吧，外面自动删除
-    cur->swapOut();
+    auto raw_ptr = cur.get();
+    cur.reset();
+    raw_ptr->swapOut();
   }
+}
+
+void IOManager::onTimerInsertedAtFront() {
+  tickle();
 }
 
 void IOManager::FdContext::triggerEvent(IOManager::Event event) {
   DDG_ASSERT(events & event);
 
-  events = static_cast<Event>(events & ~event);
+  events = static_cast<Event>(events & ~event);  // 这里将事件消除
   EventContext& ctx = getContext(event);
   if (ctx.cb) {
     ctx.scheduler->schedule(&ctx.cb);
@@ -346,6 +375,18 @@ void IOManager::FdContext::resetContext(EventContext& ctx) {
   ctx.cb = nullptr;
   ctx.fiber.reset();
   ctx.scheduler = nullptr;
+}
+
+IOManager::FdContext::EventContext& IOManager::FdContext::getContext(
+    Event event) {
+  switch (event) {
+    case Event::READ:
+      return read;
+    case Event::WRITE:
+      return write;
+    default:
+      DDG_ASSERT_MSG(false, "getContext");
+  }
 }
 
 }  // namespace ddg

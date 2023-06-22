@@ -34,14 +34,22 @@ class Fiber : public std::enable_shared_from_this<Fiber> {
   /**
    * @ brief 协程的状态
    */
-  enum State {
-    UNINIT = 0,
-    INIT = 1,
-    HOLD = 2,
-    EXEC = 3,
-    TERM = 4,
-    READY = 5,
-    EXCEPT = 6
+  class State {
+   public:
+    enum Type {
+      UNKNOW = -1,
+      UNINIT = 0,
+      INIT = 1,
+      HOLD = 2,
+      EXEC = 3,
+      TERM = 4,
+      READY = 5,
+      EXCEPT = 6
+    };
+
+    static std::string ToString(State::Type type);
+
+    static Fiber::State::Type FromString(const std::string& name);
   };
 
  private:
@@ -69,10 +77,10 @@ class Fiber : public std::enable_shared_from_this<Fiber> {
 
   uint64_t getId() const;
 
-  State getState() const;
+  State::Type getState() const;
 
  private:
-  void setState(Fiber::State state);
+  void setState(Fiber::State::Type state);
 
  public:
   static void SetThis(Fiber* f);
@@ -111,7 +119,7 @@ class Fiber : public std::enable_shared_from_this<Fiber> {
 
   uint32_t m_stacksize = 0;
 
-  State m_state = UNINIT;
+  State::Type m_state = State::UNINIT;
 
   ucontext_t m_ctx;
 

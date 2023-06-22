@@ -98,7 +98,7 @@ class Scheduler : public NonCopyable {
     {
       MutexType::Lock lock(m_mutex);
       for (auto it = begin; it != end; it++) {
-        need_tickle = scheduleNoLock(&*it) || need_tickle;
+        need_tickle = scheduleNoLock(&*it, 0) || need_tickle;
       }
     }
 
@@ -109,11 +109,12 @@ class Scheduler : public NonCopyable {
 
  private:
   template <class FiberOrCb>
-  bool scheduleNoLock(FiberOrCb fc, int thread) {
+  bool scheduleNoLock(FiberOrCb fc, int thread = 0) {
     FiberAndThread::ptr ft = std::make_shared<FiberAndThread>(fc, thread);
     if (ft->fiber || ft->cb) {
       m_fibers.push_back(ft);
     }
+
     return !m_fibers.empty();
   }
 
@@ -148,8 +149,8 @@ class Scheduler : public NonCopyable {
 
   size_t m_threadCount = 0;
 
-  size_t m_activeThreadCount;
-  size_t m_idleThreadCount;
+  std::atomic<size_t> m_activeThreadCount = {0};
+  std::atomic<size_t> m_idleThreadCount = {0};
   bool m_stopping = true;   // 是否停止
   bool m_autoStop = false;  // 是否自动停止
   uint64_t m_rootThread = 0;

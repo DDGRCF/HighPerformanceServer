@@ -3,7 +3,7 @@
 
 namespace ddg {
 
-static Logger::ptr g_logger = DDG_LOG_NAME("system");
+static Logger::ptr g_logger = DDG_LOG_ROOT();
 
 static thread_local Thread* t_thread = nullptr;
 static thread_local std::string t_thread_name = "UNKNOW";

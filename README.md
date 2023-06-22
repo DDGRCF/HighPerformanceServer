@@ -1,4 +1,4 @@
-# MySyLar
+# DDG High Performance Server
 
 ## 项目路径
 
@@ -7,8 +7,8 @@ bin -- 二进制
 build -- 中间文件路径
 CmakeLists.txt -- cmake的定义文件
 lib -- 库的数据路径
-Makefile
-sylar -- 源码文件
+Makefile -- task文件
+ddg -- 源码文件
 tests -- 测试文件
 ```
 
@@ -23,6 +23,10 @@ tests -- 测试文件
       |
     Appender（日志输出地方）
     ```
+
+    输出的level由最底层决定
+
+2. 组件之间太过冗余，可以减少冗余
 
 ## 协程库封装
 
@@ -53,6 +57,10 @@ tests -- 测试文件
     * 其次如果任务已经在执行了就跳过
     * 如果不上上面两种情况，那么就将移除任务或者是fiber
     * 然后根据移除的任务或者fiber选择特定的执行方式
+
+4. Scheduler stop
+    * TODO: 对于主线程中主协程的调用还是有问题，后面直接将主协程取消
+    * 在stop中启动主线程调用，从而使主协程参与调度
 
 ## socket函数库
 

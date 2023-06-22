@@ -71,17 +71,17 @@ class ScopedLockImpl : virtual public NonCopyable, CustomLock {
   ~ScopedLockImpl() { unlock(); }
 
  public:
-  void unlock() override {
-    if (m_islocked) {
-      m_mutex.unlock();
-      m_islocked = false;
-    }
-  }
-
   void lock() override {
     if (!m_islocked) {
       m_mutex.lock();
       m_islocked = true;
+    }
+  }
+
+  void unlock() override {
+    if (m_islocked) {
+      m_mutex.unlock();
+      m_islocked = false;
     }
   }
 

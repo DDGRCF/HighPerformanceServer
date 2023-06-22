@@ -3,6 +3,7 @@
 #include <execinfo.h>
 #include <pthread.h>
 #include <sys/syscall.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <thread>
@@ -55,6 +56,25 @@ ScopedMalloc::ScopedMalloc(size_t size) noexcept {
 
 ScopedMalloc::~ScopedMalloc() {
   free(m_vptr);
+}
+
+uint64_t GetCurrentMicroSecond() {
+  struct timeval tv;
+  int ret = gettimeofday(&tv, nullptr);
+  if (!ret) {
+    throw std::system_error();
+  }
+
+  return tv.tv_sec * 1000 * 1000ul + tv.tv_usec;
+}
+
+uint64_t GetCurrentMilliSecond() {
+  struct timeval tv;
+  int ret = gettimeofday(&tv, nullptr);
+  if (ret) {
+    throw std::system_error();
+  }
+  return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
 }  // namespace ddg

@@ -3,7 +3,7 @@
 
 namespace ddg {
 
-static Logger::ptr g_logger = DDG_LOG_NAME("system");
+static Logger::ptr g_logger = DDG_LOG_ROOT();
 
 // Semphore
 Semphore::Semphore(uint32_t count) {

@@ -21,7 +21,7 @@ static std::unordered_set<uint64_t> s_fiber_id_set;
 
 static std::atomic<uint64_t> s_fiber_count{0};
 
-static Logger::ptr g_logger = DDG_LOG_NAME("system");
+static Logger::ptr g_logger = DDG_LOG_ROOT();
 
 static ConfigVar<uint32_t>::ptr g_fiber_stack_size = Config::Lookup<uint32_t>(
     "fiber.stack_size", 128 * 1024, "fiber stack size");
@@ -38,8 +38,43 @@ void MallocStackAllocator::Dealloc(void* vp, size_t size) noexcept {
   free(vp);
 }
 
+std::string Fiber::State::ToString(State::Type type) {
+  switch (type) {
+#define XX(name)             \
+  case (Fiber::State::name): \
+    return #name;            \
+    break
+    XX(UNINIT);
+    XX(INIT);
+    XX(HOLD);
+    XX(EXEC);
+    XX(TERM);
+    XX(READY);
+    XX(EXCEPT);
+#undef XX
+    default:
+      return "Unknow";
+  }
+}
+
+Fiber::State::Type Fiber::State::FromString(const std::string& name) {
+#define XX(type)               \
+  if (#type == name) {         \
+    return Fiber::State::type; \
+  }
+  XX(UNINIT);
+  XX(INIT);
+  XX(HOLD);
+  XX(EXEC);
+  XX(TERM);
+  XX(READY);
+  XX(EXCEPT);
+
+  return State::UNKNOW;
+}
+
 Fiber::Fiber() {
-  m_state = EXEC;
+  m_state = State::EXEC;
   SetThis(this);
   if (getcontext(&m_ctx)) {
     DDG_ASSERT_MSG(false, "getcontext");
@@ -73,16 +108,17 @@ Fiber::Fiber(Callback cb, size_t stacksize, bool use_caller) : m_cb(cb) {
   }
 
   DDG_LOG_DEBUG(g_logger) << "Fiber::Fiber id = " << m_id;
-  m_state = INIT;
+  m_state = State::INIT;
 }
 
 Fiber::~Fiber() {
   safeFiberCountDesc();
   if (m_stack) {
-    DDG_ASSERT(m_state == TERM || m_state == EXCEPT || m_state == INIT);
+    DDG_ASSERT(m_state == State::TERM || m_state == State::EXCEPT ||
+               m_state == State::INIT);
     StackAllocator::Dealloc(m_stack, m_stacksize);
   } else {
-    DDG_ASSERT(m_cb == nullptr && m_state == EXEC);
+    DDG_ASSERT(m_cb == nullptr && m_state == State::EXEC);
     Fiber* cur = t_fiber;
 
     if (cur == this) {
@@ -96,7 +132,8 @@ Fiber::~Fiber() {
 
 void Fiber::reset(Callback cb) {
   DDG_ASSERT(m_stack);
-  DDG_ASSERT(m_state == TERM || m_state == EXCEPT || m_state == INIT);
+  DDG_ASSERT(m_state == State::TERM || m_state == State::EXCEPT ||
+             m_state == State::INIT);
   m_cb = cb;
 
   if (getcontext(&m_ctx)) {
@@ -107,13 +144,13 @@ void Fiber::reset(Callback cb) {
   m_ctx.uc_stack.ss_size = m_stacksize;
 
   makecontext(&m_ctx, &Fiber::MainFunc, 0);
-  m_state = INIT;
+  m_state = State::INIT;
 }
 
 void Fiber::swapIn() {
   SetThis(this);
-  DDG_ASSERT(m_state != EXEC);
-  m_state = EXEC;
+  DDG_ASSERT(m_state != State::EXEC);
+  m_state = State::EXEC;
 
   if (swapcontext(&Scheduler::GetMainFiber()->m_ctx,
                   &m_ctx)) {  // 从主MainFiber调入m_ctx
@@ -130,7 +167,7 @@ void Fiber::swapOut() {
 
 void Fiber::call() {
   SetThis(this);
-  m_state = EXEC;
+  m_state = State::EXEC;
   if (swapcontext(&t_threadFiber->m_ctx, &m_ctx)) {
     DDG_ASSERT_MSG(false, "swapcontext");
   }
@@ -147,11 +184,11 @@ uint64_t Fiber::getId() const {
   return m_id;
 }
 
-Fiber::State Fiber::getState() const {
+Fiber::State::Type Fiber::getState() const {
   return m_state;
 }
 
-void Fiber::setState(Fiber::State state) {
+void Fiber::setState(Fiber::State::Type state) {
   m_state = state;
 }
 
@@ -176,14 +213,15 @@ void Fiber::Yield() {
 
 void Fiber::YieldToReady() {
   Fiber::ptr cur = GetThis();
-  DDG_ASSERT(cur->m_state == EXEC);
-  cur->m_state = READY;
+  DDG_ASSERT(cur->m_state == State::EXEC);
+  cur->m_state = State::READY;
   cur->swapOut();
 }
 
 void Fiber::YieldToHold() {
   Fiber::ptr cur = GetThis();
-  cur->m_state = HOLD;
+  DDG_ASSERT(cur->m_state == State::EXEC);
+  cur->m_state = State::HOLD;
   cur->swapOut();
 }
 
@@ -199,14 +237,14 @@ void Fiber::MainFunc() {
   try {
     cur->m_cb();
     cur->m_cb = nullptr;
-    cur->m_state = TERM;
+    cur->m_state = State::TERM;
   } catch (std::exception& e) {
-    cur->m_state = EXCEPT;
+    cur->m_state = State::EXCEPT;
     DDG_LOG_ERROR(g_logger) << "Fiber::MainFunc Except: " << e.what()
                             << " fiber_id = " << cur->getId() << "\n"
                             << ddg::BacktraceToString();
   } catch (...) {
-    cur->m_state = EXCEPT;
+    cur->m_state = State::EXCEPT;
     DDG_LOG_ERROR(g_logger)
         << "Fiber::MainFunc fiber_id = " << cur->getId() << "\n"
         << ddg::BacktraceToString();
@@ -226,14 +264,14 @@ void Fiber::CallerMainFunc() {
   try {
     cur->m_cb();
     cur->m_cb = nullptr;
-    cur->m_state = TERM;
+    cur->m_state = State::TERM;
   } catch (std::exception& e) {
-    cur->m_state = EXCEPT;
+    cur->m_state = State::EXCEPT;
     DDG_LOG_ERROR(g_logger) << "Fiber::MainFunc Except: " << e.what()
                             << " fiber_id = " << cur->getId() << "\n"
                             << ddg::BacktraceToString();
   } catch (...) {
-    cur->m_state = EXCEPT;
+    cur->m_state = State::EXCEPT;
     DDG_LOG_ERROR(g_logger)
         << "Fiber::MainFunc fiber_id = " << cur->getId() << "\n"
         << ddg::BacktraceToString();

@@ -8,10 +8,11 @@
 #include "ddg/fiber.h"
 #include "ddg/log.h"
 #include "ddg/scheduler.h"
+#include "ddg/timer.h"
 
 namespace ddg {
 
-class IOManager : public Scheduler {
+class IOManager : public Scheduler, public TimerManager {
  public:
   using ptr = std::shared_ptr<IOManager>;
   using Callback = std::function<void()>;
@@ -62,18 +63,20 @@ class IOManager : public Scheduler {
 
   bool cancelAll(int fd);
 
-  static IOManager* GetThis(int fd);
+  static IOManager* GetThis();
 
  protected:
   void tickle() override;
 
   bool isStoped() override;
 
-  bool isStoped(uint64_t timeout);
+  bool isStoped(uint64_t& timeout);
 
   void idle() override;
 
   void contextResize(size_t size);
+
+  void onTimerInsertedAtFront() override;
 
  private:
   int m_epfd = 0;
