@@ -28,14 +28,16 @@ ConfigVarBase::ptr Config::LookupBase(const std::string& name) {
   return it == GetDatas().end() ? nullptr : it->second;
 }
 
-// Config
-const std::string Config::kValidSet = "abcdefghijklmnopqrstuvwxyz._0123456789";
+const std::string& Config::kValidSet() {
+  const static std::string val = "abcdefghijklmnopqrstuvwxyz._0123456789";
+  return val;
+}
 
 void Config::ListAllMember(
     const std::string& prefix, const YAML::Node& node,
     std::list<std::pair<std::string, const YAML::Node>>& output) {
   RWMutexType::ReadLock lock(GetMutex());
-  if (prefix.find_first_not_of(kValidSet) != std::string::npos) {
+  if (prefix.find_first_not_of(kValidSet()) != std::string::npos) {
     DDG_LOG_ERROR(DDG_LOG_ROOT())
         << "Config invalid name: " << prefix << " : " << node;
     return;

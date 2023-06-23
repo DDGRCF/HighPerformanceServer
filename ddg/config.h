@@ -177,7 +177,7 @@ class Config {
 
   using VisitCallback = std::function<void(ConfigVarBase::ptr)>;
 
-  static const std::string kValidSet;
+  static const std::string& kValidSet();
 
   template <class T>
   static ConfigVarPtr<T> Lookup(const std::string& name, const T& default_value,
@@ -188,18 +188,12 @@ class Config {
     if (it != GetDatas().end()) {
       auto tmp = std::dynamic_pointer_cast<ConfigVar<T>>(it->second);
       if (tmp) {
-        DDG_LOG_INFO(DDG_LOG_ROOT()) << "Lookup name: " << name << " exists";
         return tmp;
-      } else {
-        DDG_LOG_ERROR(DDG_LOG_ROOT())
-            << "Lookup name = " << name << " exists but type not "
-            << TypeToName<T>() << " real_type = " << it->second->getTypeName()
-            << " " << it->second->toString();
       }
+      throw std::logic_error("the type not equal");
     }
 
-    if (name.find_first_not_of(kValidSet) != std::string::npos) {
-      DDG_LOG_ERROR(DDG_LOG_ROOT()) << "Config invalid name: " << name;
+    if (name.find_first_not_of(kValidSet()) != std::string::npos) {
       throw std::invalid_argument(name);
     }
 

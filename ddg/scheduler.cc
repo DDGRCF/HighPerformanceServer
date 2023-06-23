@@ -131,7 +131,8 @@ Fiber* Scheduler::GetMainFiber() {
 }
 
 void Scheduler::run() {
-  DDG_LOG_DEBUG(g_logger) << "into run ...";
+  // DDG_LOG_DEBUG(g_logger) << "into run ...";
+  set_hook_enable(true);
   SetThis();
   if (ddg::GetThreadId() != m_rootThread) {
     t_scheduler_fiber = Fiber::GetThis().get();
