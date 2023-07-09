@@ -106,13 +106,6 @@ class Fiber : public std::enable_shared_from_this<Fiber> {
   static uint64_t GetFiberId();
 
  private:
-  void safeFiberIdIncr();
-
-  void safeFiberCountIncr();
-
-  void safeFiberCountDesc();
-
- private:
   MutexType m_mutex;
 
   uint64_t m_id = 0;

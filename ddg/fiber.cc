@@ -14,10 +14,7 @@ namespace ddg {
 static thread_local Fiber* t_fiber = nullptr;
 static thread_local Fiber::ptr t_threadFiber = nullptr;
 
-const uint64_t kMaxFiberId = UINT64_MAX - 1;
-
 static std::atomic<uint64_t> s_fiber_id{0};
-static std::unordered_set<uint64_t> s_fiber_id_set;
 
 static std::atomic<uint64_t> s_fiber_count{0};
 
@@ -80,14 +77,15 @@ Fiber::Fiber() {
     DDG_ASSERT_MSG(false, "getcontext");
   }
 
-  safeFiberCountIncr();  // 未设置m_stack表示当前的线程的栈区
+  s_fiber_count++;
 
   DDG_LOG_DEBUG(g_logger) << "Fiber::Fiber main";
 }
 
 Fiber::Fiber(Callback cb, size_t stacksize, bool use_caller) : m_cb(cb) {
-  safeFiberIdIncr();
-  safeFiberCountIncr();
+  s_fiber_id++;
+  m_id = s_fiber_id;
+  s_fiber_count++;
 
   m_stacksize = stacksize ? stacksize : g_fiber_stack_size->getValue();
 
@@ -112,7 +110,7 @@ Fiber::Fiber(Callback cb, size_t stacksize, bool use_caller) : m_cb(cb) {
 }
 
 Fiber::~Fiber() {
-  safeFiberCountDesc();
+  s_fiber_count--;
   if (m_stack) {
     DDG_ASSERT(m_state == State::TERM || m_state == State::EXCEPT ||
                m_state == State::INIT);
@@ -290,35 +288,6 @@ uint64_t Fiber::GetFiberId() {
   }
 
   return 0;
-}
-
-void Fiber::safeFiberIdIncr() {
-  if (s_fiber_id <= kMaxFiberId - 1) {
-    m_id = ++s_fiber_id;
-    MutexType::Lock lock(m_mutex);
-    s_fiber_id_set.insert(m_id);
-  } else {
-    MutexType::Lock lock(m_mutex);  // TODO:
-    uint64_t i;
-    for (i = 0; i <= kMaxFiberId; i++) {
-      if (s_fiber_id_set.find(i) == s_fiber_id_set.end()) {
-        m_id = i;
-        s_fiber_id_set.insert(m_id);
-        break;
-      }
-    }
-    if (i == kMaxFiberId + 1) {
-      DDG_ASSERT_MSG(false, "Fiber::safeFiberIdIncr too many fiber");
-    }
-  }
-}
-
-void Fiber::safeFiberCountIncr() {
-  s_fiber_count++;
-}
-
-void Fiber::safeFiberCountDesc() {
-  s_fiber_count--;
 }
 
 }  // namespace ddg

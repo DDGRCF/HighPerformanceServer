@@ -158,8 +158,8 @@ class LexicalCast<std::string, std::map<std::string, T>> {
       ss.str("");
       ss.clear();
       ss << it->second;
-      mp.insert(
-          std::make_pair(it->first, LexicalCast<std::string, T>()(it->second)));
+      mp.insert(std::make_pair(it->first.Scalar(),
+                               LexicalCast<std::string, T>()(ss.str())));
     }
     return mp;
   }
