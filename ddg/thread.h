@@ -13,16 +13,15 @@ namespace ddg {
 class Thread : public NonCopyable {
  public:
   using ptr = std::shared_ptr<Thread>;
-
   using Callback = std::function<void()>;
 
   Thread(const std::string& name, Callback cb);
 
   ~Thread();
 
-  pid_t getId() const { return m_id; }
+  pid_t getId() const;
 
-  std::string getName() const { return m_name; }
+  const std::string& getName() const;
 
   void join();
   void detach();

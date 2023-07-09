@@ -11,8 +11,9 @@
 
 namespace ddg {
 
-static thread_local Fiber* t_fiber = nullptr;
-static thread_local Fiber::ptr t_threadFiber = nullptr;
+static thread_local Fiber* t_fiber = nullptr;  // 当前正在运行的协程
+
+static thread_local Fiber::ptr t_threadFiber = nullptr;  // 当前线程的主协程
 
 static std::atomic<uint64_t> s_fiber_id{0};
 
@@ -73,28 +74,25 @@ Fiber::State::Type Fiber::State::FromString(const std::string& name) {
 Fiber::Fiber() {
   m_state = State::EXEC;
   SetThis(this);
+
   if (getcontext(&m_ctx)) {
     DDG_ASSERT_MSG(false, "getcontext");
   }
 
   s_fiber_count++;
-
-  DDG_LOG_DEBUG(g_logger) << "Fiber::Fiber main";
+  // DDG_LOG_DEBUG(g_logger) << "Fiber::Fiber main";
 }
 
 Fiber::Fiber(Callback cb, size_t stacksize, bool use_caller) : m_cb(cb) {
-  s_fiber_id++;
-  m_id = s_fiber_id;
-  s_fiber_count++;
-
   m_stacksize = stacksize ? stacksize : g_fiber_stack_size->getValue();
 
-  if (getcontext(&m_ctx)) {
+  if (getcontext(&m_ctx)) {  // 获得当前环境的上下文
     DDG_ASSERT_MSG(false, "getcontext");
   }
 
-  m_stack = StackAllocator::Alloc(m_stacksize);
+  m_stack = StackAllocator::Alloc(m_stacksize);  // 分配内存
 
+  // 指向当前上下文接收后，下一个激活的上下文对象指针，只在当前上下文有makecontext创建有效
   m_ctx.uc_link = nullptr;
   m_ctx.uc_stack.ss_sp = m_stack;
   m_ctx.uc_stack.ss_size = m_stacksize;
@@ -105,27 +103,29 @@ Fiber::Fiber(Callback cb, size_t stacksize, bool use_caller) : m_cb(cb) {
     makecontext(&m_ctx, &Fiber::CallerMainFunc, 0);  // 使用当前的回调
   }
 
-  DDG_LOG_DEBUG(g_logger) << "Fiber::Fiber id = " << m_id;
   m_state = State::INIT;
+  s_fiber_count++;
+  m_id = ++s_fiber_id;
+  // DDG_LOG_DEBUG(g_logger) << "Fiber::Fiber id = " << m_id;
 }
 
 Fiber::~Fiber() {
   s_fiber_count--;
-  if (m_stack) {
+  if (m_stack) {  // 有栈，说明不是主协程
     DDG_ASSERT(m_state == State::TERM || m_state == State::EXCEPT ||
                m_state == State::INIT);
     StackAllocator::Dealloc(m_stack, m_stacksize);
-  } else {
-    DDG_ASSERT(m_cb == nullptr && m_state == State::EXEC);
-    Fiber* cur = t_fiber;
+  } else {  // 没有栈，说明是主协程
+    DDG_ASSERT(m_cb == nullptr);
+    DDG_ASSERT(m_state == State::EXEC);
 
-    if (cur == this) {
+    Fiber* cur = t_fiber;  // 当前协程就是自己
+    if (cur == this) {  // 如果当前协程就是自己就退出  TODO: 这里可以不要
       SetThis(nullptr);
     }
   }
-
-  DDG_LOG_DEBUG(g_logger) << "Fiber::~Fiber id = " << m_id
-                          << " total = " << s_fiber_count;
+  // DDG_LOG_DEBUG(g_logger) << "Fiber::~Fiber id = " << m_id
+  //                        << " total = " << s_fiber_count;
 }
 
 void Fiber::reset(Callback cb) {
@@ -137,6 +137,7 @@ void Fiber::reset(Callback cb) {
   if (getcontext(&m_ctx)) {
     DDG_ASSERT_MSG(false, "getcontext");
   }
+
   m_ctx.uc_link = nullptr;
   m_ctx.uc_stack.ss_sp = m_stack;
   m_ctx.uc_stack.ss_size = m_stacksize;
@@ -195,11 +196,11 @@ void Fiber::SetThis(Fiber* f) {
 }
 
 Fiber::ptr Fiber::GetThis() {
-  if (t_fiber) {
+  if (t_fiber) {  // 如果主线程存在，就返回主协程
     return t_fiber->shared_from_this();
   }
 
-  Fiber::ptr main_fiber(new Fiber);
+  Fiber::ptr main_fiber = std::shared_ptr<Fiber>();
   DDG_ASSERT(t_fiber == main_fiber.get());
   t_threadFiber = main_fiber;
   return t_fiber->shared_from_this();
@@ -231,6 +232,7 @@ uint64_t Fiber::TotalFibers() {
 
 void Fiber::MainFunc() {
   Fiber::ptr cur = GetThis();
+
   DDG_ASSERT(cur);
   try {
     cur->m_cb();

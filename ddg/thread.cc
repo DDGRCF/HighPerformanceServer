@@ -8,24 +8,6 @@ static Logger::ptr g_logger = DDG_LOG_ROOT();
 static thread_local Thread* t_thread = nullptr;
 static thread_local std::string t_thread_name = "UNKNOW";
 
-Thread* Thread::GetThis() {
-  return t_thread;
-}
-
-std::string GetName() {
-  return t_thread_name;
-}
-
-void Thread::SetName(const std::string& name) {
-  if (name.empty()) {
-    return;
-  }
-  if (t_thread) {
-    t_thread->m_name = name;
-  }
-  t_thread_name = name;
-}
-
 Thread::Thread(const std::string& name, Callback cb) : m_cb(cb), m_name(name) {
   if (name.empty()) {
     m_name = "UNKNOW";
@@ -44,6 +26,32 @@ Thread::~Thread() {
   if (m_thread) {
     pthread_detach(m_thread);
   }
+}
+
+Thread* Thread::GetThis() {
+  return t_thread;
+}
+
+std::string GetName() {
+  return t_thread_name;
+}
+
+pid_t Thread::getId() const {
+  return m_id;
+}
+
+const std::string& Thread::getName() const {
+  return m_name;
+}
+
+void Thread::SetName(const std::string& name) {
+  if (name.empty()) {
+    return;
+  }
+  if (t_thread) {
+    t_thread->m_name = name;
+  }
+  t_thread_name = name;
 }
 
 void Thread::join() {
