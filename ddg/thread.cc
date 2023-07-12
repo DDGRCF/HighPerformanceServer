@@ -1,5 +1,7 @@
 #include "ddg/thread.h"
+
 #include "ddg/log.h"
+#include "ddg/macro.h"
 
 namespace ddg {
 
@@ -32,7 +34,7 @@ Thread::Thread(const std::string& name, Callback cb) : m_cb(cb), m_name(name) {
   }
 
   int ret = pthread_create(&m_thread, nullptr, &Thread::run, this);
-  if (ret != 0) {
+  if (DDG_UNLIKELY(ret != 0)) {
     DDG_LOG_ERROR(g_logger)
         << "pthread_create thread fail, ret = " << ret << " name = " << m_name;
     throw std::logic_error("pthread_create error");
@@ -49,7 +51,7 @@ Thread::~Thread() {
 void Thread::join() {
   if (m_thread) {
     int ret = pthread_join(m_thread, nullptr);
-    if (ret) {
+    if (DDG_UNLIKELY(ret)) {
       DDG_LOG_ERROR(g_logger)
           << "pthread_join thread fail. ret = " << ret << " name = " << m_name;
       throw std::logic_error("pthread_join error");
@@ -61,9 +63,9 @@ void Thread::join() {
 void Thread::detach() {
   if (m_thread) {
     int ret = pthread_detach(m_thread);
-    if (ret) {
-      DDG_LOG_ERROR(g_logger)
-          << "pthread_join thread fail. ret = " << ret << " name = " << m_name;
+    if (DDG_UNLIKELY(ret)) {
+      DDG_LOG_ERROR(g_logger) << "pthread_detach thread fail. ret = " << ret
+                              << " name = " << m_name;
       throw std::logic_error("pthread_join error");
     }
     m_thread = 0;
@@ -75,8 +77,9 @@ void* Thread::run(void* arg) {
 
   t_thread = thread;
   t_thread_name = thread->m_name;
-  thread->m_id = ddg::GetThreadId();
-  pthread_setname_np(pthread_self(), thread->m_name.substr(0, 10).c_str());
+
+  t_thread->m_id = ddg::GetThreadId();
+  pthread_setname_np(pthread_self(), t_thread->m_name.substr(0, 10).c_str());
 
   Callback cb;
   cb.swap(thread->m_cb);

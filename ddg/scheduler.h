@@ -19,14 +19,12 @@ class Scheduler : public NonCopyable {
   using MutexType = Mutex;
 
  public:
-  Scheduler(size_t threads = 1, bool use_caller = true,
-            const std::string& name = "");
+  Scheduler(size_t threads = 1, const std::string& name = "",
+            bool use_caller = true);
 
   virtual ~Scheduler();
 
-  std::string getName() const;
-
-  void SetThis();
+  const std::string& getName() const;
 
   void start();
 
@@ -34,126 +32,109 @@ class Scheduler : public NonCopyable {
 
  public:
   static Scheduler* GetThis();
-
-  static Fiber* GetMainFiber();
+  static void SetThis(Scheduler* scheduler);
 
  protected:
-  virtual bool isStoped();
+  virtual bool stopping();
 
   virtual void tickle();
 
   virtual void idle();
 
-  bool hasIdleThreads() { return m_idleThreadCount > 0; }
+  virtual void run();
 
-  void run();
+  bool hasIdleThreads() const;
 
- private:
-  struct FiberAndThread {
-    using ptr = std::shared_ptr<FiberAndThread>;
+  bool hasActivateThreads() const;
 
+ protected:
+  struct ScheduleTask {
+    using ptr = std::shared_ptr<ScheduleTask>;
     using Callback = std::function<void()>;
 
-    Fiber::ptr fiber;
-    Callback cb;
-    u_int64_t thread;
+    Fiber::ptr fiber = nullptr;
+    Callback callback = nullptr;
+    int thread = -1;
 
-    FiberAndThread(Fiber::ptr f, uint64_t thr = 0) : fiber(f), thread(thr) {}
+    ScheduleTask(Fiber::ptr f, int t = -1) : fiber(f), thread(t) {}
 
-    FiberAndThread(Fiber::ptr* f, uint64_t thr = 0) : thread(thr) {
-      fiber.swap(*f);
+    ScheduleTask(Fiber::ptr* f, int t = -1) : thread(t) {
+      std::swap(*f, fiber);
     }
 
-    FiberAndThread(Callback f, uint64_t thr = 0) : cb(f), thread(thr) {}
+    ScheduleTask(Callback cb, int t = -1) : callback(cb), thread(t) {}
 
-    FiberAndThread(Callback* f, uint64_t thr = 0) : thread(thr) { cb.swap(*f); }
-
-    FiberAndThread() : thread(0) {}
+    ScheduleTask() : thread(-1) {}
 
     void reset() {
       fiber = nullptr;
-      cb = nullptr;
-      thread = 0;
+      callback = nullptr;
+      thread = -1;
     }
-
-   private:
   };
 
  public:
-  template <class FiberOrCb>
-  void schedule(FiberOrCb fc, uint64_t thread = 0) {
+  template <class Task>
+  void schedule(Task task, int thread = -1) {
     bool need_tickle = false;
     {
       MutexType::Lock lock(m_mutex);
-      need_tickle = scheduleNoLock(fc, thread);
+      need_tickle = scheduleNoLock(task, thread);
     }
     if (need_tickle) {
-      tickle();
+      tickle();  // 唤醒idle线程
     }
   }
 
   template <class InputIterator>
-  void schedule(InputIterator begin, InputIterator end) {
+  void schedule(InputIterator begin, InputIterator end, int thread = -1) {
     bool need_tickle = false;
     {
       MutexType::Lock lock(m_mutex);
       for (auto it = begin; it != end; it++) {
-        need_tickle = scheduleNoLock(&*it, 0) || need_tickle;
+        need_tickle = scheduleNoLock(*it, thread) || need_tickle;
       }
     }
 
     if (need_tickle) {
-      tickle();
+      tickle();  // 唤醒idle线程
     }
   }
 
  private:
-  template <class FiberOrCb>
-  bool scheduleNoLock(FiberOrCb fc, int thread = 0) {
-    FiberAndThread::ptr ft = std::make_shared<FiberAndThread>(fc, thread);
-    if (ft->fiber || ft->cb) {
-      m_fibers.push_back(ft);
+  template <class Task>
+  bool scheduleNoLock(Task fc, int thread = 0) {
+    ScheduleTask task = ScheduleTask(fc, thread);
+    if (task.fiber || task.callback) {
+      if (task.fiber && task.fiber->getState() == Fiber::State::HOLD) {
+        task.fiber->setState(Fiber::State::READY);
+      }
+      m_tasks.push_back(task);
     }
-
-    return !m_fibers.empty();
-  }
-
-  bool scheduleNoLock(FiberAndThread::ptr ft) {
-    if (ft->fiber || ft->cb) {
-      m_fibers.push_back(ft);
-    }
-    return !m_fibers.empty();
-  }
-
-  void schedule(FiberAndThread::ptr ft) {
-    bool need_tickle = false;
-    {
-      MutexType::Lock lock(m_mutex);
-      need_tickle = scheduleNoLock(ft);
-    }
-    if (need_tickle) {
-      tickle();
-    }
+    return !m_tasks.empty();
   }
 
  private:
   MutexType m_mutex;
 
   std::string m_name = "UNKNOWN";
+
   std::vector<Thread::ptr> m_threads;
-  std::list<FiberAndThread::ptr> m_fibers;
-  Fiber::ptr m_rootFiber;
+
+  std::list<ScheduleTask> m_tasks;
+
+  bool m_use_caller = false;
 
  protected:
-  std::vector<uint64_t> m_threadIds;
+  std::atomic<size_t> m_active_thread_count{0};
 
-  size_t m_threadCount = 0;
+  std::atomic<size_t> m_idle_thread_count{0};
 
-  std::atomic<size_t> m_activeThreadCount = {0};
-  std::atomic<size_t> m_idleThreadCount = {0};
-  bool m_stopping = true;   // 是否停止
-  bool m_autoStop = false;  // 是否自动停止
-  uint64_t m_rootThread = 0;
+  size_t m_thread_count = 0;
+
+  std::vector<uint64_t> m_thread_ids;
+
+  bool m_shutdown = true;
 };
 
 }  // namespace ddg

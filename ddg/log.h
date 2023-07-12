@@ -332,8 +332,6 @@ class LoggerManager {
   LoggerManager();
   ~LoggerManager();
 
-  void init();  // extra init for expanding
-
   Logger::ptr getRoot() const;
 
   Logger::ptr getLogger(const std::string& name);

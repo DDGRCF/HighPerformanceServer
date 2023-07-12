@@ -13,7 +13,7 @@
 
 namespace ddg {
 
-uint64_t GetThreadId() {
+pid_t GetThreadId() {
   return syscall(SYS_gettid);
 }
 

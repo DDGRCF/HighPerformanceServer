@@ -1,14 +1,15 @@
 #ifndef DDG_LEXICALCAST_H_
 #define DDG_LEXICALCAST_H_
 
-#include <yaml-cpp/yaml.h>
-#include <boost/lexical_cast.hpp>
 #include <map>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <yaml-cpp/yaml.h>
+#include <boost/lexical_cast.hpp>
 
 namespace ddg {
 /**

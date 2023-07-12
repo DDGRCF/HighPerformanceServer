@@ -10,7 +10,7 @@
 
 namespace ddg {
 
-uint64_t GetThreadId();
+pid_t GetThreadId();
 
 uint64_t GetFiberId();
 

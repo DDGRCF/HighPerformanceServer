@@ -12,82 +12,98 @@
 
 namespace ddg {
 
+enum EpollCtlOp {};
+
+std::ostream& operator<<(std::ostream& os, const EpollCtlOp& op);
+std::ostream& operator<<(std::ostream& os, EPOLL_EVENTS events);
+
 class IOManager : public Scheduler, public TimerManager {
  public:
   using ptr = std::shared_ptr<IOManager>;
   using Callback = std::function<void()>;
   using RWMutexType = RWMutex;
 
-  enum Event {
-    NONE = 0x0,
-    READ = EPOLLIN,
-    WRITE = EPOLLOUT,
+  class Event {
+   public:
+    enum Type {
+      UNKNOW = -1,
+      NONE = 0x0,
+      READ = EPOLLIN,    // 0x01
+      WRITE = EPOLLOUT,  // 0x04
+    };
+
+    static std::string ToString(IOManager::Event::Type type);
+
+    static IOManager::Event::Type FromString(const std::string& name);
   };
 
  private:
-  struct FdContext {
+  struct FdEvent {
     using MutexType = Mutex;
-    using ptr = std::shared_ptr<FdContext>;
+    using Callback = std::function<void()>;
+
+    using ptr = std::shared_ptr<FdEvent>;
 
     struct EventContext {
-      using Callback = std::function<void()>;
       Scheduler* scheduler = nullptr;
       Fiber::ptr fiber;
-      Callback cb;
+      Callback callback;
     };
 
-    EventContext& getContext(Event event);
+    EventContext& getContext(Event::Type event);
 
     void resetContext(EventContext& ctx);  // 取消事件
-    void triggerEvent(Event event);        // 触发事件
+    void triggerEvent(Event::Type event);  // 触发事件
 
     EventContext read;
     EventContext write;
 
-    int fd = 0;
-
-    Event events = NONE;
+    Event::Type events = Event::NONE;
     MutexType mutex;
+
+    int fd = -1;
   };
 
  public:
-  IOManager(size_t threads = 1, bool use_caller = true,
-            const std::string& name = "");
+  IOManager(size_t threads = 1, const std::string& name = "",
+            bool use_caller = true, uint32_t epoll_size = 0);
   ~IOManager();
 
-  int addEvent(int fd, Event event, Callback cb = nullptr);
+  bool hasPendingEvents() const;
 
-  bool delEvent(int fd, Event event);
+  bool addEvent(int fd, Event::Type event, Callback cb = nullptr);
 
-  bool cancelEvent(int fd, Event event);
+  bool delEvent(int fd, Event::Type event);
+
+  bool cancelEvent(int fd, Event::Type event);
 
   bool cancelAll(int fd);
 
   static IOManager* GetThis();
 
  protected:
+  bool stopping() override;
+
+  bool stopping(uint64_t& timeout);
+
   void tickle() override;
-
-  bool isStoped() override;
-
-  bool isStoped(uint64_t& timeout);
 
   void idle() override;
 
-  void contextResize(size_t size);
+  void eventResize(size_t size);
 
   void onTimerInsertedAtFront() override;
 
  private:
-  int m_epfd = 0;
+  int m_epfd = -1;
 
   int m_tickle_fds[2];
 
   RWMutexType m_mutex;
 
-  std::vector<FdContext*> m_fdContext;
+  std::vector<FdEvent*> m_fd_events;
 
-  std::atomic<size_t> m_pendingEventCount{0};
+  std::atomic<size_t> m_pending_event_count{0};
 };
 
 }  // namespace ddg

@@ -11,17 +11,15 @@
 
 namespace ddg {
 
-static thread_local Fiber* t_fiber = nullptr;
-static thread_local Fiber::ptr t_threadFiber = nullptr;
+static Logger::ptr g_logger = DDG_LOG_ROOT();
 
-const uint64_t kMaxFiberId = UINT64_MAX - 1;
+static thread_local Fiber* t_cur_fiber = nullptr;  // 当前正在运行的协程
+
+static thread_local Fiber::ptr t_thread_fiber = nullptr;  // 当前线程的主协程
 
 static std::atomic<uint64_t> s_fiber_id{0};
-static std::unordered_set<uint64_t> s_fiber_id_set;
 
 static std::atomic<uint64_t> s_fiber_count{0};
-
-static Logger::ptr g_logger = DDG_LOG_ROOT();
 
 static ConfigVar<uint32_t>::ptr g_fiber_stack_size = Config::Lookup<uint32_t>(
     "fiber.stack_size", 128 * 1024, "fiber stack size");
@@ -38,22 +36,19 @@ void MallocStackAllocator::Dealloc(void* vp, size_t size) noexcept {
   free(vp);
 }
 
-std::string Fiber::State::ToString(State::Type type) {
+std::string Fiber::State::ToString(Fiber::State::Type type) {
   switch (type) {
 #define XX(name)             \
   case (Fiber::State::name): \
     return #name;            \
     break
-    XX(UNINIT);
-    XX(INIT);
-    XX(HOLD);
-    XX(EXEC);
-    XX(TERM);
     XX(READY);
-    XX(EXCEPT);
+    XX(RUNNING);
+    XX(HOLD);
+    XX(TERM);
 #undef XX
     default:
-      return "Unknow";
+      return "UNKNOW";
   }
 }
 
@@ -62,122 +57,89 @@ Fiber::State::Type Fiber::State::FromString(const std::string& name) {
   if (#type == name) {         \
     return Fiber::State::type; \
   }
-  XX(UNINIT);
-  XX(INIT);
-  XX(HOLD);
-  XX(EXEC);
-  XX(TERM);
   XX(READY);
-  XX(EXCEPT);
-
+  XX(RUNNING);
+  XX(HOLD);
+  XX(TERM);
   return State::UNKNOW;
 }
 
 Fiber::Fiber() {
-  m_state = State::EXEC;
   SetThis(this);
-  if (getcontext(&m_ctx)) {
+
+  int ret = getcontext(&m_ctx);
+  if (DDG_UNLIKELY(ret)) {
     DDG_ASSERT_MSG(false, "getcontext");
   }
 
-  safeFiberCountIncr();  // 未设置m_stack表示当前的线程的栈区
-
-  DDG_LOG_DEBUG(g_logger) << "Fiber::Fiber main";
+  s_fiber_count++;
+  m_state = State::RUNNING;
 }
 
-Fiber::Fiber(Callback cb, size_t stacksize, bool use_caller) : m_cb(cb) {
-  safeFiberIdIncr();
-  safeFiberCountIncr();
-
+Fiber::Fiber(Callback cb, size_t stacksize) : m_cb(cb) {
   m_stacksize = stacksize ? stacksize : g_fiber_stack_size->getValue();
 
-  if (getcontext(&m_ctx)) {
+  int ret = getcontext(&m_ctx);
+  if (DDG_UNLIKELY(ret)) {
     DDG_ASSERT_MSG(false, "getcontext");
   }
 
-  m_stack = StackAllocator::Alloc(m_stacksize);
+  m_stack = StackAllocator::Alloc(m_stacksize);  // 分配内存
 
+  // 指向当前上下文接收后，下一个激活的上下文对象指针，只在当前上下文有makecontext创建有效
   m_ctx.uc_link = nullptr;
+  // 存放上下文的栈
   m_ctx.uc_stack.ss_sp = m_stack;
+  // 栈的大小
   m_ctx.uc_stack.ss_size = m_stacksize;
 
-  if (!use_caller) {
-    makecontext(&m_ctx, &Fiber::MainFunc, 0);  // 使用mainfiber回调
-  } else {
-    makecontext(&m_ctx, &Fiber::CallerMainFunc, 0);  // 使用当前的回调
-  }
+  // 将上下文和主回调绑定
+  makecontext(&m_ctx, &Fiber::MainCallback, 0);  // 使用mainfiber回调
 
-  DDG_LOG_DEBUG(g_logger) << "Fiber::Fiber id = " << m_id;
-  m_state = State::INIT;
+  s_fiber_count++;
+  s_fiber_id++;
+  m_id = s_fiber_id;
 }
 
 Fiber::~Fiber() {
-  safeFiberCountDesc();
-  if (m_stack) {
-    DDG_ASSERT(m_state == State::TERM || m_state == State::EXCEPT ||
-               m_state == State::INIT);
+  if (m_stack) {  // 有栈，说明不是主协程
+    DDG_ASSERT(m_state == State::TERM);
     StackAllocator::Dealloc(m_stack, m_stacksize);
-  } else {
-    DDG_ASSERT(m_cb == nullptr && m_state == State::EXEC);
-    Fiber* cur = t_fiber;
+  } else {  // 没有栈，说明是主协程
+    DDG_ASSERT(m_cb.getCallback() == nullptr);
+    DDG_ASSERT(m_state == State::RUNNING);
 
-    if (cur == this) {
+    // 这一步没有影响
+    Fiber* cur = t_cur_fiber;  // 当前协程就是自己
+    if (cur == this) {  // 如果当前协程就是自己就退出  TODO: 这里可以不要
       SetThis(nullptr);
     }
   }
 
-  DDG_LOG_DEBUG(g_logger) << "Fiber::~Fiber id = " << m_id
-                          << " total = " << s_fiber_count;
+  m_state = State::TERM;
+  s_fiber_count--;
 }
 
 void Fiber::reset(Callback cb) {
+  // 只有主协程没有栈，非主协程才可以回调
   DDG_ASSERT(m_stack);
-  DDG_ASSERT(m_state == State::TERM || m_state == State::EXCEPT ||
-             m_state == State::INIT);
+  DDG_ASSERT(m_state == State::TERM);
+
+  // 重新设置回调函数
   m_cb = cb;
 
-  if (getcontext(&m_ctx)) {
+  int ret = getcontext(&m_ctx);
+  if (DDG_UNLIKELY(ret)) {
     DDG_ASSERT_MSG(false, "getcontext");
   }
+
   m_ctx.uc_link = nullptr;
   m_ctx.uc_stack.ss_sp = m_stack;
   m_ctx.uc_stack.ss_size = m_stacksize;
 
-  makecontext(&m_ctx, &Fiber::MainFunc, 0);
-  m_state = State::INIT;
-}
+  makecontext(&m_ctx, &Fiber::MainCallback, 0);
 
-void Fiber::swapIn() {
-  SetThis(this);
-  DDG_ASSERT(m_state != State::EXEC);
-  m_state = State::EXEC;
-
-  if (swapcontext(&Scheduler::GetMainFiber()->m_ctx,
-                  &m_ctx)) {  // 从主MainFiber调入m_ctx
-    DDG_ASSERT_MSG(false, "swapcontext");
-  }
-}
-
-void Fiber::swapOut() {
-  SetThis(Scheduler::GetMainFiber());
-  if (swapcontext(&m_ctx, &Scheduler::GetMainFiber()->m_ctx)) {
-    DDG_ASSERT_MSG(false, "swapcontext")
-  }
-}
-
-void Fiber::call() {
-  SetThis(this);
-  m_state = State::EXEC;
-  if (swapcontext(&t_threadFiber->m_ctx, &m_ctx)) {
-    DDG_ASSERT_MSG(false, "swapcontext");
-  }
-}
-
-void Fiber::back() {
-  SetThis(t_threadFiber.get());
-  if (swapcontext(&m_ctx, &t_threadFiber->m_ctx)) {
-    DDG_ASSERT_MSG(false, "swapcontext");
-  }
+  m_state = State::READY;
 }
 
 uint64_t Fiber::getId() const {
@@ -189,136 +151,89 @@ Fiber::State::Type Fiber::getState() const {
 }
 
 void Fiber::setState(Fiber::State::Type state) {
+  MutexType::Lock lock(m_mutex);
   m_state = state;
 }
 
 void Fiber::SetThis(Fiber* f) {
-  t_fiber = f;
+  t_cur_fiber = f;
 }
 
 Fiber::ptr Fiber::GetThis() {
-  if (t_fiber) {
-    return t_fiber->shared_from_this();
+  if (t_cur_fiber) {  // 如果当前线程存在，就返回
+    return t_cur_fiber->shared_from_this();
   }
 
-  Fiber::ptr main_fiber(new Fiber);
-  DDG_ASSERT(t_fiber == main_fiber.get());
-  t_threadFiber = main_fiber;
-  return t_fiber->shared_from_this();
+  // 如果当前线程不存在则，主线程一定不存在，这时候需要创造主线程
+  Fiber::ptr main_fiber(new Fiber());
+  DDG_ASSERT(t_cur_fiber == main_fiber.get());
+
+  t_thread_fiber = main_fiber;
+  return t_cur_fiber->shared_from_this();
 }
 
-void Fiber::Yield() {
-  YieldToReady();
+// 让出
+void Fiber::yield(Fiber::State::Type type) {
+  DDG_ASSERT(m_state == State::RUNNING ||
+             m_state == State::TERM);  // 终止和运行状态可以
+
+  SetThis(t_thread_fiber.get());
+
+  if (m_state != State::TERM) {
+    m_state = type;
+  }
+
+  if (DDG_UNLIKELY(swapcontext(&m_ctx, &t_thread_fiber->m_ctx))) {
+    DDG_ASSERT_MSG(false, "swapcontext");
+    m_state = State::TERM;
+  }
 }
 
-void Fiber::YieldToReady() {
+void Fiber::resume() {
+  DDG_ASSERT(m_state == State::READY);
+
+  SetThis(this);
+
+  m_state = State::RUNNING;
+
+  if (DDG_UNLIKELY(swapcontext(&t_thread_fiber->m_ctx, &m_ctx))) {
+    DDG_ASSERT_MSG(false, "swapcontext");
+    m_state = State::TERM;
+  }
+}
+
+void Fiber::Yield(Fiber::State::Type type) {
+  DDG_ASSERT(type == Fiber::State::HOLD || type == Fiber::State::READY);
   Fiber::ptr cur = GetThis();
-  DDG_ASSERT(cur->m_state == State::EXEC);
-  cur->m_state = State::READY;
-  cur->swapOut();
+  cur->yield(type);
 }
 
 void Fiber::YieldToHold() {
-  Fiber::ptr cur = GetThis();
-  DDG_ASSERT(cur->m_state == State::EXEC);
-  cur->m_state = State::HOLD;
-  cur->swapOut();
+  Yield(Fiber::State::HOLD);
 }
 
-void Fiber::YieldToFibers() {}
-
-uint64_t Fiber::TotalFibers() {
+uint64_t Fiber::GetFiberNum() {
   return s_fiber_count;
 }
 
-void Fiber::MainFunc() {
+void Fiber::MainCallback() {
   Fiber::ptr cur = GetThis();
-  DDG_ASSERT(cur);
-  try {
-    cur->m_cb();
-    cur->m_cb = nullptr;
-    cur->m_state = State::TERM;
-  } catch (std::exception& e) {
-    cur->m_state = State::EXCEPT;
-    DDG_LOG_ERROR(g_logger) << "Fiber::MainFunc Except: " << e.what()
-                            << " fiber_id = " << cur->getId() << "\n"
-                            << ddg::BacktraceToString();
-  } catch (...) {
-    cur->m_state = State::EXCEPT;
-    DDG_LOG_ERROR(g_logger)
-        << "Fiber::MainFunc fiber_id = " << cur->getId() << "\n"
-        << ddg::BacktraceToString();
-  }
 
-  auto raw_ptr = cur.get();
-  cur.reset();  // 释放对象所有权
-  raw_ptr->swapOut();
-  DDG_ASSERT_MSG(false,
-                 "never reach fiber_id = " + std::to_string(raw_ptr->getId()));
-}
-
-void Fiber::CallerMainFunc() {
-  Fiber::ptr cur = GetThis();
   DDG_ASSERT(cur);
 
-  try {
-    cur->m_cb();
-    cur->m_cb = nullptr;
-    cur->m_state = State::TERM;
-  } catch (std::exception& e) {
-    cur->m_state = State::EXCEPT;
-    DDG_LOG_ERROR(g_logger) << "Fiber::MainFunc Except: " << e.what()
-                            << " fiber_id = " << cur->getId() << "\n"
-                            << ddg::BacktraceToString();
-  } catch (...) {
-    cur->m_state = State::EXCEPT;
-    DDG_LOG_ERROR(g_logger)
-        << "Fiber::MainFunc fiber_id = " << cur->getId() << "\n"
-        << ddg::BacktraceToString();
-  }
+  cur->m_cb();
+  cur->m_cb = nullptr;
 
   auto raw_ptr = cur.get();
-  cur.reset();  // 释放对象所有权
-  raw_ptr->back();
-  DDG_ASSERT_MSG(false,
-                 "never reach fiber_id = " + std::to_string(raw_ptr->getId()));
+  cur.reset();
+  raw_ptr->yield();
 }
 
 uint64_t Fiber::GetFiberId() {
-  if (t_fiber) {
-    return t_fiber->getId();
+  if (t_cur_fiber) {
+    return t_cur_fiber->getId();
   }
-
-  return 0;
-}
-
-void Fiber::safeFiberIdIncr() {
-  if (s_fiber_id <= kMaxFiberId - 1) {
-    m_id = ++s_fiber_id;
-    MutexType::Lock lock(m_mutex);
-    s_fiber_id_set.insert(m_id);
-  } else {
-    MutexType::Lock lock(m_mutex);  // TODO:
-    uint64_t i;
-    for (i = 0; i <= kMaxFiberId; i++) {
-      if (s_fiber_id_set.find(i) == s_fiber_id_set.end()) {
-        m_id = i;
-        s_fiber_id_set.insert(m_id);
-        break;
-      }
-    }
-    if (i == kMaxFiberId + 1) {
-      DDG_ASSERT_MSG(false, "Fiber::safeFiberIdIncr too many fiber");
-    }
-  }
-}
-
-void Fiber::safeFiberCountIncr() {
-  s_fiber_count++;
-}
-
-void Fiber::safeFiberCountDesc() {
-  s_fiber_count--;
+  return ~0ull;
 }
 
 }  // namespace ddg

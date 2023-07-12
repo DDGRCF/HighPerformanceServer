@@ -6,32 +6,28 @@
 static ddg::Logger::ptr g_logger = DDG_LOG_ROOT();
 
 void test_call() {
-  static int s_count = 5;
-  DDG_LOG_DEBUG(g_logger) << "test_call start "
-                          << "id " << s_count;
+  DDG_LOG_DEBUG(g_logger) << "id: [norm] test_call start ";
+  sleep(5);
   ddg::Fiber::Yield();
-  sleep(1);
-  DDG_LOG_DEBUG(g_logger) << "test_call end "
-                          << "id " << s_count;
-  if (s_count > 0) {
-    ddg::Scheduler::GetThis()->schedule(&test_call, ddg::GetThreadId());
-    s_count--;
-  }
+  DDG_LOG_DEBUG(g_logger) << "id: [norm] test_call end ";
+  ddg::Scheduler scheduler(2, "test", false);
+  scheduler.schedule(test_call);
 }
 
 int main() {
-  ddg::Scheduler scheduler(2, true, "test");
-  for (int i = 0; i < 3; i++) {
+  ddg::Scheduler scheduler(2, "test", true);
+
+  scheduler.schedule(test_call);
+  scheduler.start();
+  for (int i = 0; i < 20; i++) {
     scheduler.schedule([i]() {
-      DDG_LOG_DEBUG(g_logger) << "id: " << i << " test_call start";
+      DDG_LOG_DEBUG(g_logger) << "id: [" << i << "] test_call start";
+      sleep(1);
       ddg::Fiber::Yield();
-      DDG_LOG_DEBUG(g_logger) << "id " << i << " test_call end";
+      DDG_LOG_DEBUG(g_logger) << "id [" << i << "] test_call end";
     });
   }
 
-  scheduler.start();
-  scheduler.schedule(test_call);
-  scheduler.stop();
   DDG_LOG_DEBUG(g_logger) << "test main end";
   return 0;
 }

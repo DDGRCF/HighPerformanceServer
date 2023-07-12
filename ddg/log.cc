@@ -651,23 +651,12 @@ LoggerManager::LoggerManager() {
 
   m_root->addAppender(appender);
   m_loggers[m_root->getName()] = m_root;
-  init();
-}
 
-LoggerManager::~LoggerManager() {}
+  ConfigVar<std::set<LogDefine>>::ptr g_log_defines = ddg::Config::Lookup(
+      "logs", std::set<LogDefine>(), "logs config");  // TODO:
 
-Logger::ptr LoggerManager::getRoot() const {
-  RWMutexType::ReadLock lock(m_rwmutex);
-  return m_root;
-}
-
-void LoggerManager::init() {
-  ConfigVar<std::set<LogDefine>>::ptr g_log_defines =
-      ddg::Config::Lookup("logs", std::set<LogDefine>(), "logs config");
   auto func = [](const std::set<LogDefine>& old_defines,
                  const std::set<LogDefine>& new_defines) {
-    DDG_LOG_INFO(DDG_LOG_ROOT()) << "on_logger_conf_changed";
-
     // 增加
     for (auto& i : new_defines) {
       auto it = old_defines.find(i);
@@ -697,9 +686,7 @@ void LoggerManager::init() {
             ap.reset(new FileLogAppender(appender.file));
             break;
           default:
-            DDG_LOG_INFO(DDG_LOG_ROOT())
-                << "Logger name = " << logger->getName()
-                << " set invalid LogAppender type";
+            break;
         }
 
         ap->setLevel(appender.level);
@@ -717,12 +704,17 @@ void LoggerManager::init() {
         logger->setLevel(static_cast<LogLevel::Level>(
             100));  // 设置后会立即生效，但是在使用的线程或者协程，正在使用不会报错
         logger->clearAppender();  // 当其他进程和携程使用完后，就可以释放了
-        DDG_LOG_REMOVE(i.name);
       }
     }
   };
   g_log_defines->addListener(func);
-  DDG_LOG_DEBUG(m_root) << "LoggerManager init finish!";
+}
+
+LoggerManager::~LoggerManager() {}
+
+Logger::ptr LoggerManager::getRoot() const {
+  RWMutexType::ReadLock lock(m_rwmutex);
+  return m_root;
 }
 
 Logger::ptr LoggerManager::getLogger(const std::string& name) {

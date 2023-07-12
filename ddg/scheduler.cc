@@ -1,8 +1,7 @@
 #include "ddg/scheduler.h"
 
-#include "ddg/hook.h"
 #include "ddg/log.h"
-#include "macro.h"
+#include "ddg/macro.h"
 
 namespace ddg {
 
@@ -10,235 +9,174 @@ static Logger::ptr g_logger = DDG_LOG_ROOT();
 
 static thread_local Scheduler* t_scheduler = nullptr;
 
-static thread_local Fiber* t_scheduler_fiber = nullptr;
-
-Scheduler::Scheduler(size_t threads, bool use_caller, const std::string& name)
-    : m_name(name) {
+// 如果启动加本线程加入调度，一个线程仅允许一个scheduler
+Scheduler::Scheduler(size_t threads, const std::string& name, bool use_caller)
+    : m_name(name), m_use_caller(use_caller) {
   DDG_ASSERT(threads > 0);
-  if (use_caller) {
-    Fiber::GetThis();
-    --threads;  // 本线程参与 TODO:
-
+  if (m_use_caller) {
     DDG_ASSERT(GetThis() == nullptr);
-    t_scheduler = this;
+    Scheduler::SetThis(this);
+    threads--;
 
-    m_rootFiber.reset(new Fiber(std::bind(&Scheduler::run, this), 0, true));
     ddg::Thread::SetName(m_name);
 
-    t_scheduler_fiber = m_rootFiber.get();
-
-    m_rootThread = ddg::GetThreadId();
-    m_threadIds.push_back(m_rootThread);
-  } else {
-    m_rootThread = 0;
+    m_thread_ids.push_back(ddg::GetThreadId());
   }
 
-  m_threadCount = threads;
+  m_thread_count = threads;
 }
 
-Scheduler::~Scheduler() {}
+Scheduler::~Scheduler() {
+  stop();
+  SetThis(nullptr);
+}
 
-std::string Scheduler::getName() const {
+const std::string& Scheduler::getName() const {
   return m_name;
-}
-
-void Scheduler::tickle() {
-  DDG_LOG_DEBUG(g_logger) << "in tickle ...";
-}
-
-void Scheduler::idle() {
-  DDG_LOG_DEBUG(g_logger) << "in idle ...";
 }
 
 void Scheduler::start() {
   MutexType::Lock lock(m_mutex);
-  m_stopping = false;
+  m_shutdown = false;
   DDG_ASSERT(m_threads.empty());  // 保证非空
-  m_threads.resize(m_threadCount);
-  for (size_t i = 0; i < m_threadCount; i++) {
+  m_threads.resize(m_thread_count);
+
+  for (size_t i = 0; i < m_thread_count; i++) {
     m_threads[i].reset(new Thread(m_name + "_" + std::to_string(i),
                                   std::bind(&Scheduler::run, this)));
-    m_threadIds.push_back(m_threads[i]->getId());
+    m_thread_ids.push_back(m_threads[i]->getId());
   }
 }
 
 void Scheduler::stop() {
-  m_autoStop = true;
-  if (isStoped()) {
+  if (stopping()) {
     return;
   }
+  m_shutdown = true;
 
-  if (m_rootFiber && (m_rootFiber->getState() == Fiber::State::TERM ||
-                      m_rootFiber->getState() == Fiber::State::EXCEPT)) {
-    DDG_LOG_DEBUG(g_logger) << this << " stopped";
-    m_stopping = true;
-    if (isStoped()) {
-      return;
-    }
-  }
-
-  if (m_rootThread != 0) {
-    DDG_ASSERT(GetThis() == this);
+  if (m_use_caller) {
+    DDG_ASSERT(this == GetThis());
   } else {
-    DDG_ASSERT(GetThis() != this);
+    DDG_ASSERT(this != GetThis());
   }
 
-  m_stopping = true;
+  for (size_t i = 0; i < m_thread_count; i++) {
+    tickle();  // 提醒线程处理
+  }
 
-  for (size_t i = 0; i < m_threadCount; ++i) {
+  if (m_use_caller) {
     tickle();
+    run();
   }
 
-  if (m_rootFiber) {
-    tickle();
-  }
-
-  if (m_rootFiber) {
-    m_rootFiber->setState(Fiber::State::EXEC);
-
-    if (!isStoped()) {
-      m_rootFiber
-          ->call();  // 这里有个问题，就是无法在当前协程里面再添加协程，因为不是主要是因为不是主携程调度，swapIn的时候切换的是两个协程
-    }
-  }
-
-  std::vector<Thread::ptr> thrs;
+  // 防止在join的过程中又添加或删除啥导致未释放
+  std::vector<Thread::ptr> tmp_threads;
   {
     MutexType::Lock lock(m_mutex);
-    thrs.swap(m_threads);
+    tmp_threads.swap(m_threads);
   }
 
-  for (auto& i : thrs) {
-    i->join();
+  for (auto&& thread : tmp_threads) {
+    thread->join();
   }
-}
-
-bool Scheduler::isStoped() {
-  return m_autoStop && m_stopping && m_fibers.empty() &&
-         m_activeThreadCount == 0;
 }
 
 Scheduler* Scheduler::GetThis() {
   return t_scheduler;
 }
 
-void Scheduler::SetThis() {
-  t_scheduler = this;
+void Scheduler::SetThis(Scheduler* scheduler) {
+  t_scheduler = scheduler;
 }
 
-Fiber* Scheduler::GetMainFiber() {
-  return t_scheduler_fiber;
+bool Scheduler::stopping() {
+  MutexType::Lock lock(m_mutex);
+  return m_shutdown && m_tasks.empty() && !hasActivateThreads();
+}
+
+void Scheduler::tickle() {
+  DDG_LOG_DEBUG(g_logger) << "scheduler in tickle ...";
+}
+
+void Scheduler::idle() {
+  DDG_LOG_DEBUG(g_logger) << "scheduler in idle ...";
+}
+
+bool Scheduler::hasIdleThreads() const {
+  return m_idle_thread_count > 0;
+}
+
+bool Scheduler::hasActivateThreads() const {
+  return m_active_thread_count > 0;
 }
 
 void Scheduler::run() {
-  DDG_LOG_DEBUG(g_logger) << "into run ...";
-  SetThis();
-  if (ddg::GetThreadId() != m_rootThread) {
-    t_scheduler_fiber = Fiber::GetThis().get();
-  }
+  Scheduler::SetThis(this);
+  Fiber::GetThis();
 
-  FiberAndThread::ptr ft;
-  auto idle_ft = std::make_shared<FiberAndThread>(
-      std::make_shared<Fiber>(std::bind(&Scheduler::idle, this)));
+  Fiber::ptr idle_fiber(new Fiber(std::bind(&Scheduler::idle, this)));
+
+  ScheduleTask norm_task;
 
   while (true) {
-    bool is_active = false;
+    norm_task.reset();
     bool tickle_me = false;
     {
       MutexType::Lock lock(m_mutex);
-      for (auto it = m_fibers.begin(); it != m_fibers.end(); it++) {
-#define itt (*it)
-        if (itt->thread != 0 && itt->thread == GetThreadId()) {
+      auto it = m_tasks.begin();
+      while (it != m_tasks.end()) {
+        if (it->thread != -1 && it->thread != GetThreadId()) {
+          it++;
           tickle_me = true;
+          tickle();
           continue;
+        }  // 如果thread不等于-1，且调度线程不是本地线程就切换一下
+
+        if (!it->fiber && !it->callback) {
+          m_tasks.erase(it++);
+          continue;
+        }  // 如果是空的任务就，将该任务删除
+
+        if (DDG_UNLIKELY(it->fiber && it->callback)) {  // 如果两个都有就报错
+          DDG_ASSERT_MSG(false, "ScheduleTask has fiber and callback both");
         }
 
-        if (itt->fiber) {
-          auto fiber = itt->fiber;
-          auto state = fiber->getState();
-          bool is_skip = false;
-          switch (state) {
-            case Fiber::State::INIT:
-            case Fiber::State::HOLD:  // 预备
-              fiber->setState(Fiber::State::READY);
-              is_skip = true;
-              break;
-            case Fiber::State::EXEC:  // 挂起
-              is_skip = true;
-              break;
-            case Fiber::State::READY:
-              is_skip = false;
-              break;
-            default:
-              m_fibers.erase(it++);
-              is_skip = true;
-          }
+        if (it->fiber) {
+          DDG_ASSERT(it->fiber->getState() == Fiber::State::READY);
+        }  // 如果协程有效，则开始调度
 
-          if (is_skip) {
-            continue;
-          }
-        }
-
-        ft = itt;
-        m_fibers.erase(it++);
-        m_activeThreadCount++;
-        is_active = true;
-        tickle_me = is_active;
+        norm_task = *it;
+        m_tasks.erase(it++);
+        m_active_thread_count++;
         break;
-#undef itt
       }
+      tickle_me |= (it != m_tasks.end());  // 如果拿完后，还有线程剩余就退出
     }
 
     if (tickle_me) {
-      tickle();
+      tickle();  // 提醒其他线程处理一下
     }
 
-    if (is_active && (ft->fiber || ft->cb)) {
-      Fiber::ptr fiber;
-      if (ft->fiber) {
-        fiber = ft->fiber;
-      } else if (ft->cb) {
-        fiber = std::make_shared<Fiber>(ft->cb);
-        ft->cb = nullptr;
-        ft->fiber = fiber;
+    if (norm_task.callback) {
+      norm_task.fiber.reset(new Fiber(norm_task.callback, norm_task.thread));
+      norm_task.callback = nullptr;
+    }
+
+    if (norm_task.fiber) {
+      norm_task.fiber->resume();
+      if (norm_task.fiber->getState() == Fiber::State::READY) {
+        schedule(norm_task.fiber, norm_task.thread);
       }
 
-      fiber->setState(Fiber::State::Type::READY);
-      fiber->swapIn();
-      m_activeThreadCount--;
-      auto state = fiber->getState();  // 如果是调用当前携程的话没法释放
-      // DDG_LOG_DEBUG(g_logger)
-      // << "come here "
-      // << "Fiber State: " << Fiber::State::ToString(fiber->getState());
-      if (state == Fiber::State::READY) {
-        schedule(ft);
-      } else if (state != Fiber::State::TERM && state != Fiber::State::EXCEPT) {
-        ft->fiber->setState(Fiber::State::HOLD);
-      }
-
-      ft.reset();  // 重新设置智能指针
+      norm_task.reset();
+      m_active_thread_count--;
     } else {
-      if (is_active) {
-        m_activeThreadCount--;
-        continue;
-      }
-      if (idle_ft) {
-        if (idle_ft->fiber) {
-          auto fiber = idle_ft->fiber;
-          m_idleThreadCount++;
-          fiber->swapIn();
-          m_idleThreadCount--;
-          if (fiber->getState() == Fiber::State::EXEC) {
-            fiber->setState(Fiber::State::HOLD);
-          } else if (fiber->getState() == Fiber::State::TERM ||
-                     fiber->getState() == Fiber::State::EXCEPT) {
-            idle_ft.reset();
-          }
-        }
-      } else {
-        DDG_LOG_DEBUG(g_logger) << "idle_ft count: " << idle_ft.use_count();
+      if (idle_fiber->getState() == Fiber::State::TERM) {
         break;
       }
+      m_idle_thread_count++;
+      idle_fiber->resume();
+      m_idle_thread_count--;
     }
   }
 }
