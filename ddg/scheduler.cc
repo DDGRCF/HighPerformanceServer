@@ -158,7 +158,7 @@ void Scheduler::run() {
     }
 
     if (norm_task.callback) {
-      norm_task.fiber.reset(new Fiber(norm_task.callback, norm_task.thread));
+      norm_task.fiber.reset(new Fiber(norm_task.callback));
       norm_task.callback = nullptr;
     }
 

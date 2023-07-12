@@ -1,6 +1,7 @@
 #include "ddg/bytearray.h"
 
 #include <cmath>
+#include <iomanip>
 
 #include "ddg/endian.h"
 #include "ddg/log.h"
@@ -24,7 +25,10 @@ ByteArray::ByteArray(size_t base_size)
       m_position(0),
       m_capacity(base_size),
       m_size(0),
-      m_endian(DDG_BIG_ENDIAN) {}
+      m_endian(DDG_BIG_ENDIAN),
+      m_root(new Node(base_size)) {
+  m_cur = m_root;
+}
 
 ByteArray::~ByteArray() {
   Node* node = m_root;
@@ -56,7 +60,7 @@ size_t ByteArray::getCapacity() const {
 }
 
 void ByteArray::addCapacity(size_t size) {
-  if (empty()) {
+  if (size == 0) {
     return;
   }
 
@@ -93,7 +97,7 @@ size_t ByteArray::getReadSize() const {
 }
 
 void ByteArray::write(const void* buf, size_t size) {
-  if (empty()) {
+  if (size == 0) {
     return;
   }
 
@@ -210,6 +214,44 @@ size_t ByteArray::getPosition() const {
 
 size_t ByteArray::getSize() const {
   return m_size;
+}
+
+void ByteArray::clear() {
+  m_position = m_size = 0;
+  m_capacity = m_basesize;
+  Node* tmp = m_root->next;
+  while (tmp) {
+    m_cur = tmp;
+    tmp = tmp->next;
+    delete m_cur;
+  }
+  m_cur = m_root;
+  m_root->next = nullptr;
+}
+
+std::string ByteArray::toString() const {
+  std::string str;
+  str.resize(getReadSize());
+  if (str.empty()) {
+    return str;
+  }
+  read(&str[0], str.size(), m_position);
+  return str;
+}
+
+std::string ByteArray::toHexString() const {
+  std::string str = toString();
+  std::stringstream ss;
+
+  for (size_t i = 0; i < str.size(); ++i) {
+    if (i > 0 && i % 32 == 0) {
+      ss << std::endl;
+    }
+    ss << std::setw(2) << std::setfill('0') << std::hex << (int)(uint8_t)str[i]
+       << " ";
+  }
+
+  return ss.str();
 }
 
 bool ByteArray::writeToFile(const std::string& name) const {
@@ -385,18 +427,28 @@ void ByteArray::writeF<double>(double value) {
 }
 
 template <>
+void ByteArray::writeV<int8_t>(int8_t value) {
+  writeF<int8_t>(value);
+}
+
+template <>
+void ByteArray::writeV<uint8_t>(uint8_t value) {
+  writeF<uint8_t>(value);
+}
+
+template <>
 void ByteArray::writeV<int16_t>(int16_t value) {
-  writeV(EncodeZigzag16(value));
+  writeV<uint16_t>(EncodeZigzag16(value));
 }
 
 template <>
 void ByteArray::writeV<int32_t>(int32_t value) {
-  writeV(EncodeZigzag32(value));
+  writeV<uint32_t>(EncodeZigzag32(value));
 }
 
 template <>
 void ByteArray::writeV<int64_t>(int64_t value) {
-  writeV(EncodeZigzag64(value));
+  writeV<uint64_t>(EncodeZigzag64(value));
 }
 
 template <>
@@ -427,6 +479,16 @@ double ByteArray::readF<double>() {
   double value;
   memcpy(&value, &v, sizeof(v));
   return value;
+}
+
+template <>
+int8_t ByteArray::readV<int8_t>() {
+  return readF<int8_t>();
+}
+
+template <>
+uint8_t ByteArray::readV<uint8_t>() {
+  return readF<uint8_t>();
 }
 
 template <>

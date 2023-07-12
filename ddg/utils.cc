@@ -17,7 +17,7 @@ pid_t GetThreadId() {
   return syscall(SYS_gettid);
 }
 
-uint64_t GetFiberId() {
+pid_t GetFiberId() {
   return ddg::Fiber::GetFiberId();
 }
 
@@ -58,7 +58,7 @@ ScopedMalloc::~ScopedMalloc() {
   free(m_vptr);
 }
 
-uint64_t GetCurrentMicroSecond() {
+time_t GetCurrentMicroSecond() {
   struct timeval tv;
   int ret = gettimeofday(&tv, nullptr);
   if (!ret) {
@@ -68,7 +68,7 @@ uint64_t GetCurrentMicroSecond() {
   return tv.tv_sec * 1000 * 1000ul + tv.tv_usec;
 }
 
-uint64_t GetCurrentMilliSecond() {
+time_t GetCurrentMilliSecond() {
   struct timeval tv;
   int ret = gettimeofday(&tv, nullptr);
   if (ret) {

@@ -50,9 +50,9 @@ class FdContext : public std::enable_shared_from_this<FdContext> {
 
   int m_fd;
 
-  int m_recv_timeout;
+  time_t m_recv_timeout = -1;
 
-  int m_send_timeout;
+  time_t m_send_timeout = -1;
 };
 
 class FdManager {

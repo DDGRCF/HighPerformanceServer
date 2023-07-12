@@ -16,7 +16,7 @@ void run_in_fiber(int i) {
 int main(int argc, char** argv) {
 
   std::vector<ddg::Thread::ptr> threads;
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 15; i++) {
     threads.push_back(
         std::make_shared<ddg::Thread>("test_" + std::to_string(i), [i] {
           auto main_fiber = ddg::Fiber::GetThis();

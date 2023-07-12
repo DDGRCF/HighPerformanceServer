@@ -11,12 +11,12 @@ namespace ddg {
 
 static Logger::ptr g_logger = DDG_LOG_ROOT();
 
-Timer::Timer(uint64_t ms, Callback cb, bool recursing, TimerManager* manager)
-    : m_ms(ms), m_cb(cb), m_recursing(recursing), m_manager(manager) {
+Timer::Timer(time_t ms, Callback cb, bool recursing, TimerManager* manager)
+    : m_cb(cb), m_recursing(recursing), m_ms(ms), m_manager(manager) {
   m_next = ddg::GetCurrentMilliSecond() + m_ms;
 }
 
-Timer::Timer(uint64_t next) : m_next(next) {}
+Timer::Timer(time_t next) : m_next(next) {}
 
 // 将定时器自身取消
 bool Timer::cancel() {
@@ -50,9 +50,9 @@ bool Timer::refresh() {
 }
 
 // 重置定时时间，from_now代表从现在开始设置定时时间
-bool Timer::reset(uint64_t ms, bool from_now) {
+bool Timer::reset(time_t ms, bool from_now) {
   // 当前函数的执行时间，都是从进入函数开始
-  uint64_t cur_time = ddg::GetCurrentMilliSecond();
+  time_t cur_time = ddg::GetCurrentMilliSecond();
 
   if (ms == m_ms && !from_now) {
     return true;
@@ -115,7 +115,7 @@ TimerManager::TimerManager() {
 
 TimerManager::~TimerManager() {}
 
-Timer::ptr TimerManager::addTimer(uint64_t ms, Callback cb, bool recursing) {
+Timer::ptr TimerManager::addTimer(time_t ms, Callback cb, bool recursing) {
   Timer::ptr timer(new Timer(ms, cb, recursing, this));
   addTimer(timer);
   return timer;
@@ -148,20 +148,20 @@ void TimerManager::addTimer(Timer::ptr val) {
   }
 }
 
-Timer::ptr TimerManager::addConditionTimer(uint64_t ms, Callback cb,
+Timer::ptr TimerManager::addConditionTimer(time_t ms, Callback cb,
                                            std::weak_ptr<void> weak_cond,
                                            bool recurring) {
   return addTimer(ms, std::bind(&OnTimer, weak_cond, cb), recurring);
 }
 
-// 如果m_timers为空那么就返回~0ull，如果不为空就返回第一个定时器的下个时间
-uint64_t TimerManager::getNextTimer() {
-  uint64_t curr_ms = ddg::GetCurrentMilliSecond();
+// 如果m_timers为空那么就返回-1，如果不为空就返回第一个定时器的下个时间
+time_t TimerManager::getNextTimer() {
+  time_t curr_ms = ddg::GetCurrentMilliSecond();
 
   RWMutexType::ReadLock lock(m_mutex);
   m_tickled = false;
   if (m_timers.empty()) {
-    return ~0ull;
+    return -1;
   }
 
   const Timer::ptr next = *m_timers.begin();
@@ -174,7 +174,7 @@ uint64_t TimerManager::getNextTimer() {
 }
 
 void TimerManager::listExpiredCallback(std::vector<Callback>& cbs) {
-  uint64_t curr_ms = ddg::GetCurrentMilliSecond();
+  time_t curr_ms = ddg::GetCurrentMilliSecond();
 
   std::vector<Timer::ptr> expired;
   {
@@ -232,7 +232,7 @@ void TimerManager::OnTimer(std::weak_ptr<void> weak_cond, Callback cb) {
 }
 
 // 好像没有作用
-bool TimerManager::detectClockRollover(uint64_t now_ms) {
+bool TimerManager::detectClockRollover(time_t now_ms) {
   bool rollover = false;
   if (now_ms < m_previous_time) {
     rollover = true;

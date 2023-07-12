@@ -40,7 +40,8 @@ class ByteArray {
     return static_cast<uint32_t>((v << 1) ^ (v >> 31));
   }
 
-  static uint64_t EncodeZigzag64(int64_t v) {  // TODO: test
+  static uint64_t EncodeZigzag64(
+      int64_t v) {  // TODOexplicit specialization in non-namespace scope: test
     return static_cast<uint64_t>((v << 1 ^ (v >> 63)));
   }
 
@@ -99,12 +100,8 @@ class ByteArray {
   // writeF
   template <class T>
   void writeF(T value) {
-    static_assert(std::is_same<T, uint16_t>::value ||
-                      std::is_same<T, uint32_t>::value ||
-                      std::is_same<T, uint64_t>::value,
-                  "Unsupport error");
     if (m_endian != DDG_BYTE_ORDER) {
-      value = byteswap(value);
+      value = byteswap<T>(value);
     }
     write(&value, sizeof(value));
   }
@@ -112,12 +109,7 @@ class ByteArray {
   // writeV @brief 每7位存储有数据，前面的0表示前面没有数据，前面的1表示前面还有数据
   template <class T>
   void writeV(T value) {
-    static_assert(std::is_same<T, uint16_t>::value ||
-                      std::is_same<T, uint32_t>::value ||
-                      std::is_same<T, uint64_t>::value,
-                  "Unsupport error");
-
-    uint8_t tmp[sizeof(T)];
+    uint8_t tmp[sizeof(T) * 8 / 7 + 1];
     uint8_t i = 0;
     while (value >= 0x80) {
       tmp[i++] = (value & 0x7F) | 0x80;
@@ -148,7 +140,7 @@ class ByteArray {
     T v;
     read(&v, sizeof(v));
     if (m_endian != DDG_BYTE_ORDER) {
-      return byteswap(v);
+      return byteswap<T>(v);
     }
     return v;
   }
@@ -156,12 +148,8 @@ class ByteArray {
   // readV 变长
   template <class T>
   T readV() {
-    static_assert(std::is_same<T, uint16_t>::value ||
-                      std::is_same<T, uint32_t>::value ||
-                      std::is_same<T, uint64_t>::value,
-                  "Unsupport error");
     uint32_t result = 0;
-    for (int i = 0; i < static_cast<int>(sizeof(T)) * 8; i++) {
+    for (int i = 0; i < static_cast<int>(sizeof(T)) * 8; i += 7) {
       uint8_t b = readF<uint8_t>();
       if (b < 0x80) {
         result |= (static_cast<T>(b) << i);
@@ -223,6 +211,60 @@ class ByteArray {
   Node* m_root;
   Node* m_cur;
 };
+
+template <>
+void ByteArray::writeF<int8_t>(int8_t value);
+
+template <>
+void ByteArray::writeF<uint8_t>(uint8_t value);
+
+template <>
+void ByteArray::writeF<float>(float value);
+
+template <>
+void ByteArray::writeF<double>(double value);
+
+template <>
+void ByteArray::writeV<int8_t>(int8_t value);
+
+template <>
+void ByteArray::writeV<uint8_t>(uint8_t value);
+
+template <>
+void ByteArray::writeV<int16_t>(int16_t value);
+
+template <>
+void ByteArray::writeV<int32_t>(int32_t value);
+
+template <>
+void ByteArray::writeV<int64_t>(int64_t value);
+
+template <>
+int8_t ByteArray::readF<int8_t>();
+
+template <>
+uint8_t ByteArray::readF<uint8_t>();
+
+template <>
+float ByteArray::readF<float>();
+
+template <>
+double ByteArray::readF<double>();
+
+template <>
+int8_t ByteArray::readV<int8_t>();
+
+template <>
+uint8_t ByteArray::readV<uint8_t>();
+
+template <>
+int16_t ByteArray::readV<int16_t>();
+
+template <>
+int32_t ByteArray::readV<int32_t>();
+
+template <>
+int64_t ByteArray::readV<int64_t>();
 
 }  // namespace ddg
 

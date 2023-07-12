@@ -18,11 +18,11 @@ static ConfigVar<int>::ptr g_iomanager_epoll_size =
 static ConfigVar<int>::ptr g_iomanager_max_events =
     Config::Lookup<int>("iomanager.max_events", 500, "max events(ms)");
 
-static ConfigVar<uint64_t>::ptr g_iomanager_max_timeout =
-    Config::Lookup<uint64_t>("iomanager.max_timeout", 3000, "max timeout(ms)");
+static ConfigVar<time_t>::ptr g_iomanager_max_timeout =
+    Config::Lookup<time_t>("iomanager.max_timeout", 3000, "max timeout(ms)");
 
 std::ostream& operator<<(std::ostream& os, const EpollCtlOp& op) {
-  switch ((int)op) {
+  switch (static_cast<int>(op)) {
 #define XX(ctl) \
   case ctl:     \
     return os << #ctl;
@@ -31,7 +31,7 @@ std::ostream& operator<<(std::ostream& os, const EpollCtlOp& op) {
     XX(EPOLL_CTL_DEL);
 #undef XX
     default:
-      return os << (int)op;
+      return os << static_cast<int>(op);
   }
 }
 
@@ -92,7 +92,7 @@ IOManager::Event::Type IOManager::Event::FromString(const std::string& name) {
 }
 
 IOManager::IOManager(size_t threads, const std::string& name, bool use_caller,
-                     uint32_t epoll_size)
+                     size_t epoll_size)
     : Scheduler(threads, name, use_caller) {
   m_epfd = epoll_create(epoll_size ? epoll_size
                                    : g_iomanager_epoll_size->getValue());
@@ -335,17 +335,17 @@ void IOManager::tickle() {
 }
 
 bool IOManager::stopping() {
-  uint64_t timeout = 0;
+  time_t timeout = 0;
   return stopping(timeout);
 }
 
-bool IOManager::stopping(uint64_t& timeout) {
+bool IOManager::stopping(time_t& timeout) {
   timeout = getNextTimer();
-  return timeout == ~0ull && Scheduler::stopping() && !hasPendingEvents();
+  return timeout == -1 && Scheduler::stopping() && !hasPendingEvents();
 }
 
 void IOManager::idle() {
-  static const uint64_t MAX_TIMEOUT = g_iomanager_max_timeout->getValue();
+  static const time_t MAX_TIMEOUT = g_iomanager_max_timeout->getValue();
   static const int MAX_EVENTS = g_iomanager_max_events->getValue();
 
   epoll_event* evs = new epoll_event[MAX_EVENTS];
@@ -353,14 +353,14 @@ void IOManager::idle() {
       evs, [](epoll_event* ptr) { delete[] ptr; });
 
   while (true) {
-    uint64_t next_timeout = 0;
+    time_t next_timeout = -1;
     if (DDG_UNLIKELY(stopping(next_timeout))) {
       break;
     }
 
     int ret = 0;
     do {
-      if (next_timeout != ~0ull) {
+      if (next_timeout != -1) {
         next_timeout = next_timeout > MAX_TIMEOUT ? MAX_TIMEOUT : next_timeout;
       } else {
         next_timeout = MAX_TIMEOUT;
@@ -421,9 +421,9 @@ void IOManager::idle() {
       int op = left_evs ? EPOLL_CTL_MOD : EPOLL_CTL_DEL;
       ev.events = EPOLLET | left_evs;
 
-      int ret2 = epoll_ctl(m_epfd, op, fd_event->fd, &ev);
+      ret = epoll_ctl(m_epfd, op, fd_event->fd, &ev);
 
-      if (ret2) {
+      if (ret) {
         DDG_LOG_ERROR(g_logger)
             << "IOManager::idle epoll_ctl(" << m_epfd << ", "
             << static_cast<EpollCtlOp>(op) << ", " << fd_event->fd << ", "

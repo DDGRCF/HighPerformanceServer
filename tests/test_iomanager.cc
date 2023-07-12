@@ -165,6 +165,7 @@ void test_iomanager3() {
 }
 
 int main() {
+  // 循环测试，看看有没有偶然性错误
   for (;;) {
     test_iomanager1();
     ddg::Thread::ptr t1 =

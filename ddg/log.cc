@@ -5,8 +5,7 @@
 namespace ddg {
 
 // LogLevel
-const char* LogLevel::ToString(LogLevel::Level level) {
-
+std::string LogLevel::ToString(LogLevel::Level level) {
   switch (level) {
 #define XX(name)       \
   case LogLevel::name: \
@@ -38,6 +37,18 @@ LogLevel::Level LogLevel::FromString(const std::string& level) {
   XX(FATAL);
   return LogLevel::UNKNOW;
 #undef XX
+}
+
+std::ostream& operator<<(std::ostream& os, const LogLevel::Level level) {
+  os << LogLevel::ToString(level);
+  return os;
+}
+
+std::istream& operator>>(std::istream& is, LogLevel::Level& level) {
+  std::string name;
+  is >> name;
+  level = LogLevel::FromString(name);
+  return is;
 }
 
 // Logger
@@ -108,7 +119,7 @@ LogLevel::Level Logger::getLevel() const {
   return m_level;
 }
 
-std::string Logger::getName() const {
+const std::string& Logger::getName() const {
   RWMutexType::ReadLock lock(m_rwmutex);
   return m_name;
 }

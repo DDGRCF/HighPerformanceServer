@@ -39,10 +39,10 @@ namespace ddg {
 
 static Logger::ptr g_logger = DDG_LOG_ROOT();
 
-static ddg::ConfigVar<uint64_t>::ptr g_tcp_connect_timeout =
-    ddg::Config::Lookup("tcp.connect.timeout", 5000ul, "tcp connext timeout");
+static ddg::ConfigVar<time_t>::ptr g_tcp_connect_timeout =
+    ddg::Config::Lookup("tcp.connect.timeout", 5000l, "tcp connext timeout");
 
-static uint64_t s_connect_timeout = 0;
+static time_t s_connect_timeout = -1;
 
 static thread_local bool t_hook_enable = false;
 
@@ -97,6 +97,7 @@ static ssize_t do_io(int fd, OriginFun fun, const char* hook_fun_name,
   if (!ddg::t_hook_enable) {
     return fun(fd, std::forward<Args>(args)...);
   }
+
   ddg::FdContext::ptr ctx = ddg::FdMgr::GetInstance()->get(fd);
   if (!ctx) {
     return fun(fd, std::forward<Args>(args)...);
@@ -111,21 +112,21 @@ static ssize_t do_io(int fd, OriginFun fun, const char* hook_fun_name,
     return fun(fd, std::forward<Args>(args)...);
   }
 
-  uint64_t to = ctx->getTimeout(timeout_so);
+  time_t to = ctx->getTimeout(timeout_so);
   std::shared_ptr<timer_info> tinfo(new timer_info);
 
 retry:
-  ssize_t n = fun(fd, std::forward<Args>(args)...);
-  while (n == -1 && errno == EINTR) {
-    n = fun(fd, std::forward<Args>(args)...);
+  ssize_t ret = fun(fd, std::forward<Args>(args)...);
+  while (ret == -1 && errno == EINTR) {
+    ret = fun(fd, std::forward<Args>(args)...);
   }
 
-  if (n == -1 && errno == EAGAIN) {
+  if (ret == -1 && errno == EAGAIN) {
     ddg::IOManager* iom = ddg::IOManager::GetThis();
     ddg::Timer::ptr timer;
     std::weak_ptr<timer_info> winfo(tinfo);
 
-    if (to != 0) {
+    if (to != -1) {
       timer = iom->addConditionTimer(
           to,
           [winfo, fd, iom, event]() {
@@ -134,7 +135,8 @@ retry:
               return;
             }
             t->cancelled = ETIMEDOUT;
-            iom->cancelEvent(fd, (ddg::IOManager::Event::Event::Type)(event));
+            iom->cancelEvent(fd,
+                             static_cast<ddg::IOManager::Event::Type>(event));
           },
           winfo);
     }
@@ -151,16 +153,31 @@ retry:
       }
       goto retry;
     } else {
-      DDG_LOG_ERROR(ddg::g_logger)
-          << hook_fun_name << " addEvent(" << fd << ", " << event << ")";
+      DDG_LOG_ERROR(ddg::g_logger) << hook_fun_name << " IOManager::addEvent("
+                                   << fd << ", " << event << ")";
       if (timer) {
         timer->cancel();
       }
       return -1;
     }
   }
+  if (ret == -1) {
+    int error = 0;
+    socklen_t len = sizeof(error);
+    ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
+    if (ret == -1) {
+      return -1;
+    }
 
-  return n;
+    errno = error;
+    if (!error) {
+      return 0;
+    } else {
+      return -1;
+    }
+  }
+  return ret;
+  // 获取当前socket状态
 }
 
 extern "C" {
@@ -300,7 +317,7 @@ int accept(int s, struct sockaddr* addr, socklen_t* addrlen) {
 }
 
 int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t addrlen,
-                         uint64_t timeout_ms) {
+                         time_t timeout_ms) {
   if (!ddg::t_hook_enable) {
     return connect_f(fd, addr, addrlen);
   }
@@ -335,7 +352,7 @@ int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t addrlen,
 
   std::weak_ptr<timer_info> winfo(tinfo);
 
-  if (timeout_ms != 0) {
+  if (timeout_ms != -1) {
     timer = iom->addConditionTimer(
         timeout_ms,
         [winfo, fd, iom]() {

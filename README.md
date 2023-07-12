@@ -1,5 +1,16 @@
 # DDG High Performance Server
 
+## 前言
+
+* 单位
+  * 所有时间的类型为: `time_t`(避免有些地方使用`static_cast<uint64_t>(-1)`这种尴尬使用)
+  * 所有线程id，进程id，协程id使用: `pid_t`(这样也避免尴尬转换)
+* 协程的状态为
+  * READY：初始态，只有这个状态才能被resume
+  * RUNNING：运行态
+  * HOLD：阻塞态，这个状态在不会主动加入调度器，手动加入调度器后在调度的时候会被设为READY
+  * TERM：终止态，一个线程Callback执行完毕后会进入终止态(回调函数有装饰器)
+
 ## 项目路径
 
 ```shell
@@ -10,6 +21,7 @@ lib -- 库的数据路径
 Makefile -- task文件
 ddg -- 源码文件
 tests -- 测试文件
+example -- 示例文件
 ```
 
 ## 日志系统

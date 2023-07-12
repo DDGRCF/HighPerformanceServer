@@ -23,8 +23,7 @@ class IOManager : public Scheduler, public TimerManager {
   using Callback = std::function<void()>;
   using RWMutexType = RWMutex;
 
-  class Event {
-   public:
+  struct Event {
     enum Type {
       UNKNOW = -1,
       NONE = 0x0,
@@ -60,13 +59,12 @@ class IOManager : public Scheduler, public TimerManager {
 
     Event::Type events = Event::NONE;
     MutexType mutex;
-
     int fd = -1;
   };
 
  public:
   IOManager(size_t threads = 1, const std::string& name = "",
-            bool use_caller = true, uint32_t epoll_size = 0);
+            bool use_caller = true, size_t epoll_size = 0);
   ~IOManager();
 
   bool hasPendingEvents() const;
@@ -84,7 +82,7 @@ class IOManager : public Scheduler, public TimerManager {
  protected:
   bool stopping() override;
 
-  bool stopping(uint64_t& timeout);
+  bool stopping(time_t& timeout);
 
   void tickle() override;
 

@@ -2,6 +2,7 @@
 #define DDG_HOOK_H
 
 #include <stdint.h>
+#include <time.h>
 #include <unistd.h>
 
 namespace ddg {
@@ -82,7 +83,7 @@ typedef int (*close_func)(int fd);
 extern close_func close_f;
 
 int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t addrlen,
-                         uint64_t timeout_ms);
+                         time_t timeout_ms);
 }
 
 #endif

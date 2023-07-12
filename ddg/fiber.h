@@ -83,7 +83,7 @@ class Fiber : public std::enable_shared_from_this<Fiber> {
 
   void resume();
 
-  uint64_t getId() const;
+  pid_t getId() const;
 
   State::Type getState() const;
 
@@ -98,16 +98,16 @@ class Fiber : public std::enable_shared_from_this<Fiber> {
 
   static void MainCallback();
 
-  static uint64_t GetFiberId();
+  static pid_t GetFiberId();
 
-  static uint64_t GetFiberNum();
+  static size_t GetFiberNum();
 
  private:
   MutexType m_mutex;
 
-  uint64_t m_id = 0;
+  pid_t m_id = 0;
 
-  uint32_t m_stacksize = 0;
+  size_t m_stacksize = 0;
 
   State::Type m_state = State::READY;  // 创建实例就init状态
 

@@ -86,8 +86,14 @@ class LogLevel {
     UNKNOW = 6,
   };
 
-  static const char* ToString(LogLevel::Level level);
+  static std::string ToString(LogLevel::Level level);
+
   static LogLevel::Level FromString(const std::string& level_str);
+
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const LogLevel::Level level);
+
+  friend std::istream& operator>>(std::istream& is, LogLevel::Level& level);
 };
 
 // LogEvent
@@ -300,7 +306,7 @@ class Logger : public std::enable_shared_from_this<
 
   LogLevel::Level getLevel() const;
 
-  std::string getName() const;
+  const std::string& getName() const;
 
   void setFormatter(LogFormatter::ptr formatter);
   void setFormatter(const std::string& pattern);

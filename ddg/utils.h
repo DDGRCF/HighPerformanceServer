@@ -12,7 +12,7 @@ namespace ddg {
 
 pid_t GetThreadId();
 
-uint64_t GetFiberId();
+pid_t GetFiberId();
 
 template <typename T>
 const char* TypeToName() {
@@ -24,9 +24,9 @@ const char* TypeToName() {
 std::string BacktraceToString(int size = 64, int skip = 1,
                               const std::string& prefix = "");
 
-uint64_t GetCurrentMicroSecond();
+time_t GetCurrentMicroSecond();
 
-uint64_t GetCurrentMilliSecond();
+time_t GetCurrentMilliSecond();
 
 class ScopedMalloc : public NonCopyable {
  public:

@@ -21,8 +21,8 @@ static std::atomic<uint64_t> s_fiber_id{0};
 
 static std::atomic<uint64_t> s_fiber_count{0};
 
-static ConfigVar<uint32_t>::ptr g_fiber_stack_size = Config::Lookup<uint32_t>(
-    "fiber.stack_size", 128 * 1024, "fiber stack size");
+static ConfigVar<size_t>::ptr g_fiber_stack_size = Config::Lookup<size_t>(
+    "fiber.stack_size", 128 * 1024ul, "fiber stack size");
 
 void* MallocStackAllocator::Alloc(size_t size) noexcept {
   return malloc(size);
@@ -142,7 +142,7 @@ void Fiber::reset(Callback cb) {
   m_state = State::READY;
 }
 
-uint64_t Fiber::getId() const {
+pid_t Fiber::getId() const {
   return m_id;
 }
 
@@ -212,10 +212,6 @@ void Fiber::YieldToHold() {
   Yield(Fiber::State::HOLD);
 }
 
-uint64_t Fiber::GetFiberNum() {
-  return s_fiber_count;
-}
-
 void Fiber::MainCallback() {
   Fiber::ptr cur = GetThis();
 
@@ -229,11 +225,15 @@ void Fiber::MainCallback() {
   raw_ptr->yield();
 }
 
-uint64_t Fiber::GetFiberId() {
+size_t Fiber::GetFiberNum() {
+  return s_fiber_count;
+}
+
+pid_t Fiber::GetFiberId() {
   if (t_cur_fiber) {
     return t_cur_fiber->getId();
   }
-  return ~0ull;
+  return -1;
 }
 
 }  // namespace ddg
