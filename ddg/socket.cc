@@ -482,6 +482,8 @@ Socket::ptr Socket::CreateTcp(ddg::Address::ptr address) {
 
 Socket::ptr Socket::CreateUdp(ddg::Address::ptr address) {
   Socket::ptr sock(new Socket(address->getFamily(), UDP, 0));
+  sock->newSock();
+  sock->m_isconnected = true;
   return sock;
 }
 

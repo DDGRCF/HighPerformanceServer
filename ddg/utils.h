@@ -7,12 +7,29 @@
 #include <vector>
 
 #include "ddg/noncopyable.h"
+#include "ddg/utils/json_util.h"
+#include "ddg/utils/memory_util.h"
+#include "ddg/utils/string_util.h"
+#include "ddg/utils/type_util.h"
+
+#include <jsoncpp/json/json.h>
+#include <yaml-cpp/yaml.h>
 
 namespace ddg {
 
 pid_t GetThreadId();
 
 pid_t GetFiberId();
+time_t GetCurrentMicroSecond();
+
+time_t GetCurrentMilliSecond();
+
+std::string BacktraceToString(int size = 64, int skip = 1,
+                              const std::string& prefix = "");
+
+bool YamlToJson(const YAML::Node& ynode, Json::Value& jnode);
+
+bool JsonToYaml(const Json::Value& jnode, YAML::Node& ynode);
 
 template <typename T>
 const char* TypeToName() {
@@ -20,29 +37,6 @@ const char* TypeToName() {
       abi::__cxa_demangle(typeid(T).name(), nullptr, nullptr, nullptr);
   return s_name;
 }
-
-std::string BacktraceToString(int size = 64, int skip = 1,
-                              const std::string& prefix = "");
-
-time_t GetCurrentMicroSecond();
-
-time_t GetCurrentMilliSecond();
-
-class ScopedMalloc : public NonCopyable {
- public:
-  explicit ScopedMalloc(size_t size) noexcept;
-  ~ScopedMalloc();
-
-  template <class T>
-  T getPointer() const {
-    return static_cast<T>(m_vptr);
-  }
-
-  void* getRawPointer() const { return m_vptr; }
-
- private:
-  void* m_vptr;
-};
 
 }  // namespace ddg
 

@@ -18,12 +18,15 @@ if(OPENSSL_FOUND)
 endif()
 
 aux_source_directory(${CMAKE_PROJECT_NAME} LIB_SRC)
-aux_source_directory(${CMAKE_PROJECT_NAME}/http LIB_SRC)
+aux_source_directory(${CMAKE_PROJECT_NAME}/utils LIB_SRC)
 aux_source_directory(${CMAKE_PROJECT_NAME}/stream LIB_SRC)
+aux_source_directory(${CMAKE_PROJECT_NAME}/http LIB_SRC)
+aux_source_directory(${CMAKE_PROJECT_NAME}/http/servlets LIB_SRC)
 
 add_library(${CMAKE_PROJECT_NAME} SHARED ${LIB_SRC})
 
-target_link_libraries(${CMAKE_PROJECT_NAME} yaml-cpp dl ${OPENSSL_LIBRARIES})
+target_link_libraries(${CMAKE_PROJECT_NAME} yaml-cpp dl ${OPENSSL_LIBRARIES}
+                      jsoncpp)
 
 include_directories(./)
 
