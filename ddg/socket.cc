@@ -34,7 +34,7 @@ time_t Socket::getSendTimeout() {
   return -1;
 }
 
-void Socket::setSendTimeout(int64_t v) {
+void Socket::setSendTimeout(time_t v) {
   struct timeval tv {
     v / 1000, v % 1000 * 1000
   };
@@ -50,7 +50,7 @@ time_t Socket::getRecvTimeout() {
   return -1;
 }
 
-void Socket::setRecvTimeout(int64_t v) {
+void Socket::setRecvTimeout(time_t v) {
   struct timeval tv {
     v / 1000, v % 1000 * 1000
   };
@@ -135,7 +135,7 @@ bool Socket::bind(const Address::ptr addr) {
   return true;
 }
 
-bool Socket::reconnect(uint64_t timeout_ms) {
+bool Socket::reconnect(time_t timeout_ms) {
   if (!m_remote_address) {
     DDG_LOG_DEBUG(g_logger) << "reconnect m_remote_address is null";
     return false;
@@ -144,8 +144,10 @@ bool Socket::reconnect(uint64_t timeout_ms) {
   return connect(m_remote_address, timeout_ms);
 }
 
-bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
-  m_remote_address = addr;
+// 每次开始之前先检查一下是否初始化
+// 每次查看创建的socket的family和addr是否相同
+// 对于有定时需求的就使用重写的connect_with_timeout
+bool Socket::connect(const Address::ptr addr, time_t timeout_ms) {
   if (!isValid()) {
     newSock();
     if (DDG_UNLIKELY(!isValid())) {
@@ -160,7 +162,7 @@ bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
     return false;
   }
 
-  if (timeout_ms == 0) {
+  if (timeout_ms == -1) {
     if (::connect(m_sock, addr->getAddr(), addr->getAddrLen())) {
       DDG_LOG_DEBUG(g_logger)
           << "sock = " << m_sock << " connect(" << addr->toString()
@@ -188,13 +190,10 @@ bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
 
 bool Socket::listen(int backlog) {
   if (!isValid()) {
-    DDG_LOG_DEBUG(g_logger) << "listen error";
     return false;
   }
 
   if (::listen(m_sock, backlog)) {
-    DDG_LOG_DEBUG(g_logger)
-        << "listen error errno = " << errno << " errstr = " << strerror(errno);
     return false;
   }
   return true;
@@ -382,6 +381,8 @@ bool Socket::init(int sock) {
   return true;
 }
 
+// 首先设置地址复用，防止2MSL等待时间过长
+// 如果是TCP使用TCP_NODELAY，就是取消Nagle算法
 void Socket::initSock() {
   setOption(SOL_SOCKET, SO_REUSEADDR, 1);
   if (m_type == SOCK_STREAM) {
@@ -550,7 +551,7 @@ bool SSLSocket::bind(const Address::ptr addr) {
   return Socket::bind(addr);
 }
 
-bool SSLSocket::connect(const Address::ptr addr, uint64_t timeout_ms) {
+bool SSLSocket::connect(const Address::ptr addr, time_t timeout_ms) {
   bool v = Socket::connect(addr, timeout_ms);
   if (v) {
     m_ctx.reset(SSL_CTX_new(SSLv23_client_method()), SSL_CTX_free);

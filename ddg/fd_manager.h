@@ -33,7 +33,7 @@ class FdContext : public std::enable_shared_from_this<FdContext> {
 
   bool getSysNonblock() const;
 
-  void setTimeout(int type, int v);
+  void setTimeout(int type, time_t v);
 
   int getTimeout(int type);
 
@@ -57,7 +57,7 @@ class FdContext : public std::enable_shared_from_this<FdContext> {
 
 class FdManager {
  public:
-  using RWMutexType = RWMutex;
+  using MutexType = SpinLock;
 
   FdManager();
 
@@ -66,7 +66,7 @@ class FdManager {
   void del(int fd);
 
  private:
-  RWMutexType m_mutex;
+  MutexType m_mutex;
 
   std::vector<FdContext::ptr> m_datas;
 };

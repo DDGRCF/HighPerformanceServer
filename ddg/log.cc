@@ -1,4 +1,5 @@
 #include "log.h"
+
 #include "config.h"
 #include "lexicalcast.h"
 
@@ -195,9 +196,9 @@ std::string Logger::toString() const {
 
 // LogEvent
 LogEvent::LogEvent(Logger::ptr logger, LogLevel::Level level, const char* file,
-                   const int32_t& line, const uint64_t& elapse,
-                   const uint64_t& thread_id, const uint64_t& fiber_id,
-                   const uint64_t& time)
+                   const int32_t& line, const time_t& elapse,
+                   const pid_t& thread_id, const pid_t& fiber_id,
+                   const time_t& time)
     : m_logger(logger),
       m_level(level),
       m_file(file),

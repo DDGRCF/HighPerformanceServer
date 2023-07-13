@@ -125,7 +125,7 @@ class WriteScopedLockImpl {
  public:
   WriteScopedLockImpl(T& mutex) : m_mutex(mutex) {
     m_mutex.wrlock();
-    m_islocked = false;
+    m_islocked = true;
   }
 
   ~WriteScopedLockImpl() { unlock(); }

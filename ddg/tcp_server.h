@@ -148,7 +148,7 @@ class TcpServer : public std::enable_shared_from_this<TcpServer>, NonCopyable {
 
   IOManager* m_acceptworker;
 
-  uint64_t m_recvtimeout;
+  time_t m_recvtimeout;
 
   std::string m_name;
 

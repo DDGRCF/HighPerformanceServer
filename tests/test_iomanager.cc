@@ -158,7 +158,7 @@ void test_io() {
 }
 
 void test_iomanager3() {
-  ddg::IOManager iom;
+  ddg::IOManager iom(2, "test", true);
   iom.schedule(test_io);
   iom.start();
   iom.stop();
@@ -167,7 +167,7 @@ void test_iomanager3() {
 int main() {
   // 循环测试，看看有没有偶然性错误
   for (;;) {
-    test_iomanager1();
+    DDG_LOG_DEBUG(g_logger) << "test";
     ddg::Thread::ptr t1 =
         std::make_shared<ddg::Thread>("thread 1", test_iomanager1);
 

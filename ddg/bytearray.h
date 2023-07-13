@@ -32,30 +32,17 @@ class ByteArray {
   };
 
  private:
-  static uint16_t EncodeZigzag16(int16_t v) {
-    return static_cast<uint16_t>((v << 1) ^ (v >> 15));
-  }
+  static uint16_t EncodeZigzag16(int16_t v);
 
-  static uint32_t EncodeZigzag32(int32_t v) {
-    return static_cast<uint32_t>((v << 1) ^ (v >> 31));
-  }
+  static uint32_t EncodeZigzag32(int32_t v);
 
-  static uint64_t EncodeZigzag64(
-      int64_t v) {  // TODOexplicit specialization in non-namespace scope: test
-    return static_cast<uint64_t>((v << 1 ^ (v >> 63)));
-  }
+  static uint64_t EncodeZigzag64(int64_t v);
 
-  static int16_t DecodeZigzag16(uint16_t v) {
-    return static_cast<int16_t>((v >> 1) ^ -(v & 1));
-  }
+  static int16_t DecodeZigzag16(uint16_t v);
 
-  static int32_t DecodeZigzag32(uint32_t v) {
-    return static_cast<int32_t>((v >> 1) ^ -(v & 1));
-  }
+  static int32_t DecodeZigzag32(uint32_t v);
 
-  static int64_t DecodeZigzag64(uint64_t v) {
-    return static_cast<int64_t>((v >> 1) ^ -(v & 1));
-  }
+  static int64_t DecodeZigzag64(uint64_t v);
 
  public:
   ByteArray(size_t base_size = 4096);
@@ -202,10 +189,15 @@ class ByteArray {
   uint64_t getWriteBuffers(std::vector<iovec>& buffers, uint64_t len);
 
  private:
+  // 一个块大小
   size_t m_basesize;
+  // 读写指针
   size_t m_position;
+  // 内存池容量
   size_t m_capacity;
+  // 实际大小
   size_t m_size;
+  // 大小端
   int8_t m_endian;
 
   Node* m_root;

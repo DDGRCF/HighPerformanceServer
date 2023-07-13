@@ -18,6 +18,7 @@ int run() {
 
   std::vector<ddg::Address::ptr> fails;
   while (!tcp_server->bind(addrs, fails)) {
+    addrs = fails;
     sleep(2);
   }
 
@@ -27,7 +28,7 @@ int run() {
 }
 
 int main() {
-  ddg::IOManager iom;
+  ddg::IOManager iom(2);
   iom.start();
   iom.schedule(run);
   iom.stop();

@@ -21,11 +21,12 @@ EchoServer::EchoServer(int type) : m_type(type) {}
 
 void EchoServer::handleClient(ddg::Socket::ptr client) {
   DDG_LOG_INFO(g_logger) << "handleClient" << *client;
-  ddg::ByteArray::ptr ba(new ddg::ByteArray);
+  ddg::ByteArray::ptr ba = std::make_shared<ddg::ByteArray>();
   int ret;
   while (true) {
     ba->clear();
     std::vector<iovec> iovs;
+    // 从当前位置获取最多1024字节的iovs，指针指向的地方是相同的
     ba->getWriteBuffers(iovs, 1024);
     ret = client->recv(&iovs[0], iovs.size());
     if (ret == 0) {
@@ -38,15 +39,15 @@ void EchoServer::handleClient(ddg::Socket::ptr client) {
       break;
     }
 
+    // 这个是为什么扩大m_size，toString要获得m_size大小
     ba->setPosition(ba->getPosition() + ret);
     ba->setPosition(0);
 
     if (m_type == 1) {
-      std::cout << ba->toString();
+      DDG_LOG_INFO(g_logger) << ba->toString();
     } else {
-      std::cout << ba->toHexString();
+      DDG_LOG_INFO(g_logger) << ba->toHexString();
     }
-    std::cout << std::endl;
   }
 }
 
@@ -63,7 +64,7 @@ void run() {
 }
 
 int main() {
-  ddg::IOManager iom(2);
+  ddg::IOManager iom(4);
   iom.start();
   iom.schedule(run);
   iom.stop();

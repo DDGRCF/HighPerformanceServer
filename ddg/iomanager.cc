@@ -6,6 +6,7 @@
 #include "ddg/config.h"
 #include "ddg/hook.h"
 #include "ddg/macro.h"
+#include "ddg/mutex.h"
 
 namespace ddg {
 
@@ -121,15 +122,34 @@ IOManager::~IOManager() {
     stop();
   }
 
-  close(m_epfd);
   close(m_tickle_fds[0]);
   close(m_tickle_fds[1]);
+  close(m_epfd);
 
   for (size_t i = 0; i < m_fd_events.size(); i++) {
     if (m_fd_events[i]) {
       delete m_fd_events[i];
     }
   }
+}
+
+void IOManager::start() {
+  MutexType::Lock lock(Scheduler::m_mutex);
+  if (m_isstart) {
+    return;
+  }
+  m_shutdown = false;
+  DDG_ASSERT(m_threads.empty());  // 保证非空
+  m_threads.resize(m_thread_count);
+
+  for (size_t i = 0; i < m_thread_count; i++) {
+    m_threads[i].reset(new Thread(m_name + "_" + std::to_string(i), [this] {
+      set_hook_enable(true);
+      run();
+    }));
+    m_thread_ids.push_back(m_threads[i]->getId());
+  }
+  m_isstart = true;
 }
 
 bool IOManager::hasPendingEvents() const {

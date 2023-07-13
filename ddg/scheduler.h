@@ -26,9 +26,9 @@ class Scheduler : public NonCopyable {
 
   const std::string& getName() const;
 
-  void start();
+  virtual void start();
 
-  void stop();
+  virtual void stop();
 
  public:
   static Scheduler* GetThis();
@@ -114,7 +114,7 @@ class Scheduler : public NonCopyable {
     return !m_tasks.empty();
   }
 
- private:
+ protected:
   MutexType m_mutex;
 
   std::string m_name = "UNKNOWN";
@@ -125,7 +125,6 @@ class Scheduler : public NonCopyable {
 
   bool m_use_caller = false;
 
- protected:
   std::atomic<size_t> m_active_thread_count{0};
 
   std::atomic<size_t> m_idle_thread_count{0};
@@ -135,6 +134,8 @@ class Scheduler : public NonCopyable {
   std::vector<uint64_t> m_thread_ids;
 
   bool m_shutdown = true;
+
+  bool m_isstart = false;
 };
 
 }  // namespace ddg

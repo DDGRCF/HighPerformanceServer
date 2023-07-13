@@ -37,11 +37,11 @@ class Socket : public std::enable_shared_from_this<Socket>, NonCopyable {
 
   time_t getSendTimeout();
 
-  void setSendTimeout(int64_t v);
+  void setSendTimeout(time_t v);
 
   time_t getRecvTimeout();
 
-  void setRecvTimeout(int64_t v);
+  void setRecvTimeout(time_t v);
 
   bool getOption(int level, int option, void* result, socklen_t* len) const;
 
@@ -62,9 +62,9 @@ class Socket : public std::enable_shared_from_this<Socket>, NonCopyable {
 
   virtual bool bind(const Address::ptr addr);
 
-  virtual bool connect(const Address::ptr addr, uint64_t timeout_ms = 0);
+  virtual bool connect(const Address::ptr addr, time_t timeout_ms = 0);
 
-  virtual bool reconnect(uint64_t timeout_ms = 0);
+  virtual bool reconnect(time_t timeout_ms = 0);
 
   virtual bool listen(int backlog = SOMAXCONN);
 
@@ -175,7 +175,7 @@ class SSLSocket : public Socket {
   virtual Socket::ptr accept() override;
   virtual bool bind(const Address::ptr addr) override;
   virtual bool connect(const Address::ptr addr,
-                       uint64_t timeout_ms = -1) override;
+                       time_t timeout_ms = -1) override;
   virtual bool listen(int backlog = SOMAXCONN) override;
   virtual bool close() override;
   virtual int send(const void* buffer, size_t length, int flags = 0) override;

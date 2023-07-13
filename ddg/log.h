@@ -100,9 +100,8 @@ class LogLevel {
 class LogEvent {
  public:
   LogEvent(std::shared_ptr<Logger> logger, LogLevel::Level level,
-           const char* file, const int32_t& line, const uint64_t& elapse,
-           const uint64_t& thread_id, const uint64_t& fiber_id,
-           const uint64_t& time);
+           const char* file, const int32_t& line, const time_t& elapse,
+           const pid_t& thread_id, const pid_t& fiber_id, const time_t& time);
 
   // typedef std::shared_ptr<LogEvent> ptr;
   using ptr = std::shared_ptr<LogEvent>;
@@ -115,13 +114,13 @@ class LogEvent {
 
   int32_t getLine() const { return m_line; }
 
-  uint64_t getElapse() const { return m_elapse; }
+  time_t getElapse() const { return m_elapse; }
 
-  uint64_t getThreadId() const { return m_threadId; }
+  pid_t getThreadId() const { return m_threadId; }
 
-  uint64_t getFiberId() const { return m_fiberId; }
+  pid_t getFiberId() const { return m_fiberId; }
 
-  uint64_t getTime() const { return m_time; }
+  pid_t getTime() const { return m_time; }
 
   std::string getContent() const { return m_ss.str(); }
 
@@ -135,11 +134,11 @@ class LogEvent {
   LogLevel::Level m_level = LogLevel::DEBUG;
   const char* m_file = nullptr;
   int32_t m_line = 0;
-  uint64_t m_elapse = 0;
-  uint64_t m_threadId = 0;  // 线程号
-  uint64_t m_fiberId = 0;   // 协程号
+  time_t m_elapse = 0;
+  pid_t m_threadId = 0;  // 线程号
+  pid_t m_fiberId = 0;   // 协程号
 
-  uint64_t m_time = 0;
+  time_t m_time = 0;
   std::stringstream m_ss;
 };
 

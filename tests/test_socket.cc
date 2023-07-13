@@ -22,6 +22,7 @@ void test_socket() {
     DDG_LOG_ERROR(g_logger) << "connect addr = " << *addr << "fail";
     return;
   }
+
   DDG_LOG_DEBUG(g_logger) << "connect to " << *addr;
   DDG_LOG_DEBUG(g_logger) << "local connect: " << *sock->getLocalAddress();
   DDG_LOG_DEBUG(g_logger) << "remote connect: " << *sock->getRemoteAddress();
@@ -29,7 +30,7 @@ void test_socket() {
   const char buf[] = "GET / HTTP/1.0\r\n\r\n";
   int ret = sock->send(buf, sizeof(buf));
   if (ret <= 0) {
-    DDG_LOG_ERROR(g_logger) << "send fail ret = " << ret;
+    DDG_LOG_ERROR(g_logger) << "Socket::send fail ret = " << ret;
     return;
   }
 

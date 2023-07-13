@@ -1,5 +1,6 @@
 #include "ddg/scheduler.h"
 
+#include "ddg/hook.h"
 #include "ddg/log.h"
 #include "ddg/macro.h"
 
@@ -10,6 +11,7 @@ static Logger::ptr g_logger = DDG_LOG_ROOT();
 static thread_local Scheduler* t_scheduler = nullptr;
 
 // 如果启动加本线程加入调度，一个线程仅允许一个scheduler
+// Scheduler 是不启动set_hook_enable，因为set_hook_enable，sleep等参数需要用刀iomanager
 Scheduler::Scheduler(size_t threads, const std::string& name, bool use_caller)
     : m_name(name), m_use_caller(use_caller) {
   DDG_ASSERT(threads > 0);
@@ -37,6 +39,10 @@ const std::string& Scheduler::getName() const {
 
 void Scheduler::start() {
   MutexType::Lock lock(m_mutex);
+  if (m_isstart) {
+    return;
+  }
+
   m_shutdown = false;
   DDG_ASSERT(m_threads.empty());  // 保证非空
   m_threads.resize(m_thread_count);
@@ -46,6 +52,7 @@ void Scheduler::start() {
                                   std::bind(&Scheduler::run, this)));
     m_thread_ids.push_back(m_threads[i]->getId());
   }
+  m_isstart = true;
 }
 
 void Scheduler::stop() {
@@ -79,6 +86,7 @@ void Scheduler::stop() {
   for (auto&& thread : tmp_threads) {
     thread->join();
   }
+  m_isstart = false;
 }
 
 Scheduler* Scheduler::GetThis() {

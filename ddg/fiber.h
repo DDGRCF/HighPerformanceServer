@@ -105,7 +105,7 @@ class Fiber : public std::enable_shared_from_this<Fiber> {
  private:
   MutexType m_mutex;
 
-  pid_t m_id = 0;
+  pid_t m_id = -1;
 
   size_t m_stacksize = 0;
 

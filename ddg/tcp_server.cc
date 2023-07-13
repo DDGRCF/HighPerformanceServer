@@ -6,9 +6,9 @@
 namespace ddg {
 static ddg::Logger::ptr g_logger = DDG_LOG_ROOT();
 
-static ddg::ConfigVar<uint64_t>::ptr g_tcp_server_read_timeout =
+static ddg::ConfigVar<time_t>::ptr g_tcp_server_read_timeout =
     ddg::Config::Lookup("tcp_server.read_timeout",
-                        static_cast<uint64_t>(60 * 1000 * 2),
+                        static_cast<time_t>(60 * 1000 * 2),
                         "tcp server read timeout");
 
 bool TcpServerConf::isValid() const {
@@ -51,8 +51,9 @@ bool TcpServer::bind(ddg::Address::ptr addr, bool ssl) {
   return bind(addrs, fails, ssl);
 }
 
+// bind包括bind和监听，如果有失败的情况，就将失败的socket返回
 bool TcpServer::bind(const std::vector<Address::ptr>& addrs,
-                     std::vector<Address::ptr>& fails, bool ssl) {  // TODO:
+                     std::vector<Address::ptr>& fails, bool ssl) {
   m_ssl = ssl;
   for (auto& addr : addrs) {
     Socket::ptr sock =
@@ -60,34 +61,34 @@ bool TcpServer::bind(const std::vector<Address::ptr>& addrs,
     if (!sock->bind(addr)) {
       DDG_LOG_ERROR(g_logger)
           << "bind fail errno = " << errno << " errstr = " << strerror(errno)
-          << " addr = [" << addr->toString() << "]";
+          << " addr = " << *addr;
       fails.push_back(addr);
       continue;
     }
     if (!sock->listen()) {
       DDG_LOG_ERROR(g_logger)
           << " listen fail errno = " << errno << " errstr = " << strerror(errno)
-          << " addr=[" << addr->toString() << "]";
+          << " addr = " << *addr;
       fails.push_back(addr);
       continue;
     }
     m_socks.push_back(sock);
   }
 
-  if (!fails.empty()) {
-    m_socks.clear();
-    return false;
-  }
-
-  for (auto& elem : m_socks) {
+  for (auto& sock : m_socks) {
     DDG_LOG_DEBUG(g_logger) << "type = " << m_type << " name = " << m_name
                             << " ssl = " << std::boolalpha << m_ssl
-                            << " server bind success; " << *elem;
+                            << " server bind success; " << *sock;
+  }
+
+  if (!fails.empty()) {
+    return false;
   }
 
   return true;
 }
 
+// startAccept主要开始接收client，然后将client_socket加入到调度里面
 void TcpServer::startAccept(Socket::ptr sock) {
   while (!m_isstop) {
     Socket::ptr client = sock->accept();
@@ -102,6 +103,7 @@ void TcpServer::startAccept(Socket::ptr sock) {
   }
 }
 
+// 开始accept线程，接收每一个连接
 bool TcpServer::start() {
   if (!m_isstop) {
     return true;
@@ -142,6 +144,7 @@ void TcpServer::setName(const std::string& v) {
   m_name = v;
 }
 
+// 由于socket解引用后会自动close，因此连接上立马断开
 void TcpServer::handleClient(Socket::ptr client) {
   DDG_LOG_DEBUG(g_logger) << "handleClient" << *client;
 }

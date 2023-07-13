@@ -94,7 +94,7 @@ struct timer_info {
 template <typename OriginFun, typename... Args>
 static ssize_t do_io(int fd, OriginFun fun, const char* hook_fun_name,
                      uint32_t event, int timeout_so, Args&&... args) {
-  if (!ddg::t_hook_enable) {
+  if (!ddg::is_hook_enable()) {
     return fun(fd, std::forward<Args>(args)...);
   }
 
@@ -121,6 +121,8 @@ retry:
     ret = fun(fd, std::forward<Args>(args)...);
   }
 
+  // 如果没有数据可以读或者没有空间可以写，就一直采用定时->yield->resume的方式进行读写
+  // 也就是如果是因为非阻塞IO，没有空间导致的问题，就一直读或者写，有一部分数据发送出去
   if (ret == -1 && errno == EAGAIN) {
     ddg::IOManager* iom = ddg::IOManager::GetThis();
     ddg::Timer::ptr timer;
@@ -161,6 +163,7 @@ retry:
       return -1;
     }
   }
+  // 获取socket的状态
   if (ret == -1) {
     int error = 0;
     socklen_t len = sizeof(error);
@@ -177,7 +180,6 @@ retry:
     }
   }
   return ret;
-  // 获取当前socket状态
 }
 
 extern "C" {
@@ -187,7 +189,7 @@ HOOK_FUN(XX);
 #undef XX
 
 unsigned int sleep(unsigned int seconds) {
-  if (!ddg::t_hook_enable) {
+  if (!ddg::is_hook_enable()) {
     return sleep_f(seconds);
   }
 
@@ -206,7 +208,7 @@ unsigned int sleep(unsigned int seconds) {
 }
 
 int usleep(useconds_t usec) {
-  if (!ddg::t_hook_enable) {
+  if (!ddg::is_hook_enable()) {
     return usleep_f(usec);
   }
   ddg::Fiber::ptr fiber = ddg::Fiber::GetThis();
@@ -223,7 +225,7 @@ int usleep(useconds_t usec) {
 }
 
 int nanosleep(const struct timespec* req, struct timespec* rem) {
-  if (!ddg::t_hook_enable) {
+  if (!ddg::is_hook_enable()) {
     return nanosleep(req, rem);
   }
 
@@ -243,7 +245,7 @@ int nanosleep(const struct timespec* req, struct timespec* rem) {
 }
 
 int socket(int domain, int type, int protocol) {
-  if (!ddg::t_hook_enable) {
+  if (!ddg::is_hook_enable()) {
     return socket_f(domain, type, protocol);
   }
 
@@ -318,7 +320,7 @@ int accept(int s, struct sockaddr* addr, socklen_t* addrlen) {
 
 int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t addrlen,
                          time_t timeout_ms) {
-  if (!ddg::t_hook_enable) {
+  if (!ddg::is_hook_enable()) {
     return connect_f(fd, addr, addrlen);
   }
 
@@ -510,7 +512,7 @@ int ioctl(int fd, unsigned long int request, ...) {
 
 int setsockopt(int sockfd, int level, int optname, const void* optval,
                socklen_t optlen) {
-  if (!ddg::t_hook_enable) {
+  if (!ddg::is_hook_enable()) {
     return setsockopt_f(sockfd, level, optname, optval, optlen);
   }
   if (level == SOL_SOCKET) {
@@ -531,7 +533,7 @@ int getsockopt(int sockfd, int level, int optname, void* optval,
 }
 
 int close(int fd) {
-  if (!ddg::t_hook_enable) {
+  if (!ddg::is_hook_enable()) {
     return close_f(fd);
   }
   ddg::FdContext::ptr ctx = ddg::FdMgr::GetInstance()->get(fd);

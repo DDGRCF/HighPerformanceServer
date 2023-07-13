@@ -20,6 +20,30 @@ ByteArray::Node::~Node() {
   }
 }
 
+uint16_t ByteArray::EncodeZigzag16(int16_t v) {
+  return static_cast<uint16_t>((v << 1) ^ (v >> 15));
+}
+
+uint32_t ByteArray::EncodeZigzag32(int32_t v) {
+  return static_cast<uint32_t>((v << 1) ^ (v >> 31));
+}
+
+uint64_t ByteArray::EncodeZigzag64(int64_t v) {
+  return static_cast<uint64_t>((v << 1 ^ (v >> 63)));
+}
+
+int16_t ByteArray::DecodeZigzag16(uint16_t v) {
+  return static_cast<int16_t>((v >> 1) ^ -(v & 1));
+}
+
+int32_t ByteArray::DecodeZigzag32(uint32_t v) {
+  return static_cast<int32_t>((v >> 1) ^ -(v & 1));
+}
+
+int64_t ByteArray::DecodeZigzag64(uint64_t v) {
+  return static_cast<int64_t>((v >> 1) ^ -(v & 1));
+}
+
 ByteArray::ByteArray(size_t base_size)
     : m_basesize(base_size),
       m_position(0),
@@ -55,10 +79,12 @@ bool ByteArray::empty() const {
   return m_size == 0;
 }
 
+// 对外容量 = 原始容量 - 读写指针位置
 size_t ByteArray::getCapacity() const {
   return m_capacity - m_position;
 }
 
+// 添加容量，读写指针不变
 void ByteArray::addCapacity(size_t size) {
   if (size == 0) {
     return;
@@ -92,10 +118,12 @@ void ByteArray::addCapacity(size_t size) {
   }
 }
 
+// 获取可读的数据大小
 size_t ByteArray::getReadSize() const {
   return m_size - m_position;
 }
 
+// 写数据，写完后指针会变动
 void ByteArray::write(const void* buf, size_t size) {
   if (size == 0) {
     return;
@@ -129,6 +157,7 @@ void ByteArray::write(const void* buf, size_t size) {
   }
 }
 
+// 读数据，读完后指针会变动
 void ByteArray::read(void* buf, size_t size) {
   if (size > getReadSize()) {
     throw std::out_of_range("not enough len");
@@ -158,7 +187,8 @@ void ByteArray::read(void* buf, size_t size) {
   }
 }
 
-void ByteArray::read(void* buf, size_t size, size_t position) const {  // TODO:
+// 从指定位置开始读数据，这个过程内部指针是不变动的
+void ByteArray::read(void* buf, size_t size, size_t position) const {
   if (size > getReadSize()) {
     throw std::out_of_range("not enough len");
   }
@@ -189,6 +219,7 @@ void ByteArray::read(void* buf, size_t size, size_t position) const {  // TODO:
   }
 }
 
+// 设置指针位置
 void ByteArray::setPosition(size_t v) {
   if (v > m_capacity) {
     throw std::out_of_range("set_position out of range");
@@ -208,14 +239,17 @@ void ByteArray::setPosition(size_t v) {
   }
 }
 
+// 获取指针位置
 size_t ByteArray::getPosition() const {
   return m_position;
 }
 
+// 获得数据大小
 size_t ByteArray::getSize() const {
   return m_size;
 }
 
+// 清除内容，指针变动
 void ByteArray::clear() {
   m_position = m_size = 0;
   m_capacity = m_basesize;
@@ -229,6 +263,7 @@ void ByteArray::clear() {
   m_root->next = nullptr;
 }
 
+// 从当前位置的指针开始，获取后的所有字符串，期间不移动指针
 std::string ByteArray::toString() const {
   std::string str;
   str.resize(getReadSize());
@@ -239,6 +274,7 @@ std::string ByteArray::toString() const {
   return str;
 }
 
+// 转为为16进制
 std::string ByteArray::toHexString() const {
   std::string str = toString();
   std::stringstream ss;
@@ -254,13 +290,14 @@ std::string ByteArray::toHexString() const {
   return ss.str();
 }
 
+// 将数据写进入文件中，指针不变动
 bool ByteArray::writeToFile(const std::string& name) const {
   std::ofstream ofs;
   ofs.open(name, std::ios::trunc | std::ios::binary);
   if (!ofs) {
     DDG_LOG_DEBUG(g_logger)
-        << "writeToFile name = " << name << " error, errno = " << errno
-        << " errstr = " << strerror(errno);
+        << "ByteArray::writeToFile name = " << name
+        << " error, errno = " << errno << " errstr = " << strerror(errno);
     return false;
   }
 
@@ -283,6 +320,7 @@ bool ByteArray::writeToFile(const std::string& name) const {
   return true;
 }
 
+// 将数据从文件中读出来，指针变动
 bool ByteArray::readFromFile(const std::string& name) {
   std::ifstream ifs;
   ifs.open(name, std::ios::binary);
@@ -301,6 +339,7 @@ bool ByteArray::readFromFile(const std::string& name) {
   return true;
 }
 
+// 获得可读的buffer，指针不变动
 uint64_t ByteArray::getReadBuffers(std::vector<iovec>& buffers,
                                    uint64_t len) const {
   len = len > getReadSize() ? getReadSize() : len;
@@ -335,6 +374,7 @@ uint64_t ByteArray::getReadBuffers(std::vector<iovec>& buffers,
   return size;
 }
 
+// 从当前位置获得可写的buffer
 uint64_t ByteArray::getReadBuffers(std::vector<iovec>& buffers, uint64_t len,
                                    uint64_t position) const {
   len = len > getReadSize() ? getReadSize() : len;
@@ -372,6 +412,7 @@ uint64_t ByteArray::getReadBuffers(std::vector<iovec>& buffers, uint64_t len,
   return size;
 }
 
+// 获得可以写的buffer
 uint64_t ByteArray::getWriteBuffers(std::vector<iovec>& buffers, uint64_t len) {
   if (len == 0) {
     return 0;

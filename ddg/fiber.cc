@@ -17,9 +17,9 @@ static thread_local Fiber* t_cur_fiber = nullptr;  // 当前正在运行的协�
 
 static thread_local Fiber::ptr t_thread_fiber = nullptr;  // 当前线程的主协程
 
-static std::atomic<uint64_t> s_fiber_id{0};
+static std::atomic<pid_t> s_fiber_id{0};
 
-static std::atomic<uint64_t> s_fiber_count{0};
+static std::atomic<size_t> s_fiber_count{0};
 
 static ConfigVar<size_t>::ptr g_fiber_stack_size = Config::Lookup<size_t>(
     "fiber.stack_size", 128 * 1024ul, "fiber stack size");

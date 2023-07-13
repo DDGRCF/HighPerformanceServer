@@ -67,6 +67,8 @@ class IOManager : public Scheduler, public TimerManager {
             bool use_caller = true, size_t epoll_size = 0);
   ~IOManager();
 
+  void start() override;
+
   bool hasPendingEvents() const;
 
   bool addEvent(int fd, Event::Type event, Callback cb = nullptr);

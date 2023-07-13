@@ -47,7 +47,7 @@ bool FdContext::init() {
   }
 
   if (m_issocket) {
-    int flags = fcntl(m_fd, F_GETFL, 0);
+    int flags = fcntl_f(m_fd, F_GETFL, 0);
     // 对于socket，如果不是O_NONBLOCK，就需要设置O_NONBLOCK
     if (!(flags & O_NONBLOCK)) {
       fcntl_f(m_fd, F_SETFL, flags | O_NONBLOCK);
@@ -91,7 +91,7 @@ bool FdContext::getSysNonblock() const {
   return m_sys_nonblock;
 }
 
-void FdContext::setTimeout(int type, int v) {
+void FdContext::setTimeout(int type, time_t v) {
   if (type == SO_RCVTIMEO) {
     m_recv_timeout = v;
   } else {
@@ -116,7 +116,7 @@ FdContext::ptr FdManager::get(int fd, bool auto_create) {
     return nullptr;
   }
 
-  RWMutexType::ReadLock lock(m_mutex);
+  MutexType::Lock lock(m_mutex);
   if (static_cast<int>(m_datas.size()) <= fd && !auto_create) {
     return nullptr;
   } else {
@@ -124,13 +124,10 @@ FdContext::ptr FdManager::get(int fd, bool auto_create) {
       return m_datas[fd];
     }
   }
-  lock.unlock();
-
-  RWMutexType::WriteLock lock2(m_mutex);
 
   FdContext::ptr ctx = std::make_shared<FdContext>(fd);
   if (fd >= static_cast<int>(m_datas.size())) {
-    m_datas.resize(fd + 1.5);
+    m_datas.resize(fd * 1.5);
   }
 
   m_datas[fd] = ctx;
@@ -138,7 +135,7 @@ FdContext::ptr FdManager::get(int fd, bool auto_create) {
 }
 
 void FdManager::del(int fd) {
-  RWMutexType::WriteLock lock(m_mutex);
+  MutexType::Lock lock(m_mutex);
   if (static_cast<int>(m_datas.size()) <= fd) {
     return;
   }

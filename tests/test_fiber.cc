@@ -1,4 +1,6 @@
+#include <time.h>
 #include <vector>
+
 #include "ddg/fiber.h"
 #include "ddg/log.h"
 #include "ddg/thread.h"
@@ -14,6 +16,7 @@ void run_in_fiber(int i) {
 }
 
 int main(int argc, char** argv) {
+  srand(time(0));
 
   std::vector<ddg::Thread::ptr> threads;
   for (int i = 0; i < 15; i++) {
@@ -21,7 +24,7 @@ int main(int argc, char** argv) {
         std::make_shared<ddg::Thread>("test_" + std::to_string(i), [i] {
           auto main_fiber = ddg::Fiber::GetThis();
           DDG_LOG_DEBUG(g_logger) << "main fiber init";
-          sleep(1);
+          sleep(rand() % 5);
           ddg::Fiber::ptr fiber =
               std::make_shared<ddg::Fiber>(std::bind(run_in_fiber, i));
           fiber->resume();
