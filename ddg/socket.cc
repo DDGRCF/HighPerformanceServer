@@ -480,6 +480,7 @@ Socket::ptr Socket::CreateTcp(ddg::Address::ptr address) {
   return sock;
 }
 
+// 创建完后就自动，连接上来
 Socket::ptr Socket::CreateUdp(ddg::Address::ptr address) {
   Socket::ptr sock(new Socket(address->getFamily(), UDP, 0));
   sock->newSock();
@@ -673,7 +674,7 @@ bool SSLSocket::loadCertificates(const std::string& cert_file,
   return true;
 }
 
-SSLSocket::ptr SSLSocket::CreateTCP(ddg::Address::ptr address) {
+SSLSocket::ptr SSLSocket::CreateTcp(ddg::Address::ptr address) {
   SSLSocket::ptr sock(new SSLSocket(address->getFamily(), TCP, 0));
   return sock;
 }

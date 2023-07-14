@@ -62,9 +62,9 @@ class Socket : public std::enable_shared_from_this<Socket>, NonCopyable {
 
   virtual bool bind(const Address::ptr addr);
 
-  virtual bool connect(const Address::ptr addr, time_t timeout_ms = 0);
+  virtual bool connect(const Address::ptr addr, time_t timeout_ms = -1);
 
-  virtual bool reconnect(time_t timeout_ms = 0);
+  virtual bool reconnect(time_t timeout_ms = -1);
 
   virtual bool listen(int backlog = SOMAXCONN);
 
@@ -167,7 +167,7 @@ class SSLSocket : public Socket {
  public:
   using ptr = std::shared_ptr<SSLSocket>;
 
-  static SSLSocket::ptr CreateTCP(ddg::Address::ptr address);
+  static SSLSocket::ptr CreateTcp(ddg::Address::ptr address);
   static SSLSocket::ptr CreateTCPSocket();
   static SSLSocket::ptr CreateTCPSocket6();
 

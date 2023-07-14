@@ -8,7 +8,7 @@ void test_request() {
   ddg::http::HttpRequest::ptr req = std::make_shared<ddg::http::HttpRequest>();
   req->setHeader("host", "www.ddg.top");
   req->setBody("hello ddg");
-  req->dump(std::cout) << std::endl;
+  std::cout << *req << std::endl;
 }
 
 void test_response() {
@@ -19,12 +19,12 @@ void test_response() {
   rsp->setStatus((ddg::http::HttpStatus)400);
   rsp->setClose(false);
 
-  rsp->dump(std::cout) << std::endl;
+  std::cout << *rsp;
 }
 
 int main(int argc, char** argv) {
   test_request();
-  std::cout << std::string(150, '*') << std::endl;
+  std::cout << std::string(50, '*') << std::endl;
   test_response();
   return 0;
 }

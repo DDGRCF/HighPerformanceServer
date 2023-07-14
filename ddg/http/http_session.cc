@@ -10,6 +10,7 @@ HttpSession::HttpSession(Socket::ptr sock, bool owner)
 
 // 总体的思路就是一直解析，然后将数据送入，如果中间有部分数据没有解析就跳过
 // 如果解析完毕后最后的未解析数据就是body
+// (缓存过小的时候)这里会造成数据被吞掉的情况，请参考P72讲8:00
 HttpRequest::ptr HttpSession::recvRequest() {
   HttpRequestParser::ptr parser = std::make_shared<HttpRequestParser>();
   // 这个大小是能接受的最大大小

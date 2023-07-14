@@ -10,6 +10,14 @@
 #include "ddg/scheduler.h"
 #include "ddg/timer.h"
 
+#define IOManagerSchedule(func)                            \
+  if (ddg::IOManager::GetThis()) {                         \
+    ddg::IOManager::GetThis()->schedule(func);             \
+  } else {                                                 \
+    ddg::Logger::ptr g_logger = DDG_LOG_ROOT();            \
+    DDG_LOG_DEBUG(g_logger) << "Can't find any IOManager"; \
+  }
+
 namespace ddg {
 
 enum EpollCtlOp {};

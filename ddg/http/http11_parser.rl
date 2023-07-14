@@ -279,6 +279,7 @@ int http_parser_init(http_parser *parser) {
 size_t http_parser_execute(http_parser *parser, const char *buffer, size_t len, size_t off)  
 {
   if(len == 0) return 0;
+  /** 改动：置为0，这样后支持chunk**/
   parser->nread = 0;
   parser->mark = 0;
   parser->field_len = 0;

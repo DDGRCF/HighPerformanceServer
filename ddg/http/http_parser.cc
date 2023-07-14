@@ -143,6 +143,9 @@ void on_request_http_field(void* data, const char* field, size_t flen,
                            const char* value, size_t vlen) {
   HttpRequestParser* parser = static_cast<HttpRequestParser*>(data);
   if (flen == 0) {
+    // setError(1002) P74:22:33 数据解析失败问题
+    // 如果1002，如果header产生错误，就直接返回null
+    // 虽然不把它当做错误，可能会有数据的错落，但是当成错误，更有问题
     DDG_LOG_WARN(g_logger) << "invalid http request field length == 0";
     return;
   }
@@ -287,7 +290,9 @@ size_t HttpResponseParser::execute(char* data, size_t len, bool chunk,
 
   size_t offset = httpclient_parser_execute(&m_parser, data, len, 0);
 
-  if (withbody && isFinished()) {
+  // TODO: chunk和content-length 是互斥的，不能互相存在
+  // 参考网址：https://juejin.cn/post/7133865158304071694
+  if (withbody && isFinished() && !chunk) {
     size_t content_length = getContentLength();
 
     if (content_length > static_cast<size_t>(len - offset)) {

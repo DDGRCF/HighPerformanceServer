@@ -82,8 +82,8 @@ class LexicalCast<TcpServerConf, std::string> {
     node["args"] = YAML::Load(
         LexicalCast<std::map<std::string, std::string>, std::string>()(
             conf.args));
-    for (auto& i : conf.address) {
-      node["address"].push_back(i);
+    for (auto& addr : conf.address) {
+      node["address"].push_back(addr);
     }
     std::stringstream ss;
     ss << node;

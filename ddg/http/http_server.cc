@@ -25,6 +25,7 @@ void HttpServer::setName(const std::string& v) {
 void HttpServer::handleClient(Socket::ptr client) {
   DDG_LOG_DEBUG(g_logger) << "handleClient " << *client;
   HttpSession::ptr session(new HttpSession(client));
+  // 循环每次接收request，然后设置响应，最后将请求和响应参数交给dispatch进行分发
   do {
     auto req = session->recvRequest();
     if (!req) {
@@ -35,6 +36,7 @@ void HttpServer::handleClient(Socket::ptr client) {
       break;
     }
 
+    // 两种情况close 1. 请求close 2. 服务器不支持keepalive
     HttpResponse::ptr rsp(
         new HttpResponse(req->getVersion(), req->isClose() || !m_iskeepalive));
     rsp->setHeader("Server", getName());
