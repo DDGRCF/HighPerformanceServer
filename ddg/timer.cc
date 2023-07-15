@@ -150,8 +150,8 @@ void TimerManager::addTimer(Timer::ptr val) {
 
 Timer::ptr TimerManager::addConditionTimer(time_t ms, Callback cb,
                                            std::weak_ptr<void> weak_cond,
-                                           bool recurring) {
-  return addTimer(ms, std::bind(&OnTimer, weak_cond, cb), recurring);
+                                           bool recursing) {
+  return addTimer(ms, std::bind(&OnTimer, weak_cond, cb), recursing);
 }
 
 // 如果m_timers为空那么就返回-1，如果不为空就返回第一个定时器的下个时间

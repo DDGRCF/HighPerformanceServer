@@ -377,8 +377,7 @@ void HttpConnectionPool::ReleasePtr(HttpConnection* ptr,
                                     HttpConnectionPool* pool) {
   ptr->m_request++;
   if (!ptr->isConnected() ||
-      ptr->m_createtime + pool->m_maxalivetime >=
-          ddg::GetCurrentMilliSecond() ||
+      ptr->m_createtime + pool->m_maxalivetime < ddg::GetCurrentMilliSecond() ||
       ptr->m_request >= pool->m_maxrequest ||
       pool->m_total > static_cast<int32_t>(pool->m_maxsize)) {  // TODO:
     delete ptr;
@@ -432,7 +431,7 @@ HttpResult::ptr HttpConnectionPool::doRequest(
   HttpRequest::ptr req = std::make_shared<HttpRequest>();
   req->setPath(url);
   req->setMethod(method);
-  req->setClose(false);
+  req->setClose(false);  // 设置长连接
   bool has_host = false;
   for (auto& i : headers) {
     if (strcasecmp(i.first.c_str(), "connection") == 0) {
@@ -494,8 +493,8 @@ HttpResult::ptr HttpConnectionPool::doRequest(HttpRequest::ptr req,
   if (ret < 0) {
     return std::make_shared<HttpResult>(
         static_cast<int>(HttpResult::Error::SEND_SOCKET_ERROR), nullptr,
-        "send request socket error errno=" + std::to_string(errno) +
-            " errstr=" + std::string(strerror(errno)));
+        "send request socket error errno = " + std::to_string(errno) +
+            " errstr = " + std::string(strerror(errno)));
   }
   auto rsp = conn->recvResponse();
   if (!rsp) {

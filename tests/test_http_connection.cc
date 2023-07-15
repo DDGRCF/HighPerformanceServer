@@ -6,10 +6,14 @@ static ddg::Logger::ptr g_logger = DDG_LOG_ROOT();
 void test_pool() {
   ddg::http::HttpConnectionPool::ptr pool(new ddg::http::HttpConnectionPool(
       "www.sylar.top", "", 80, false, 10, 1000 * 30, 5));
-  ddg::IOManager::GetThis()->addTimer(1000, [pool] {
-    auto r = pool->doGet("/blog/", 300);
-    DDG_LOG_DEBUG(g_logger) << r->toString();
-  });
+  // TODO: bug 这里循环会偶然终止
+  ddg::IOManager::GetThis()->addTimer(
+      1000,
+      [pool] {
+        auto r = pool->doGet("/blog/", 1000);
+        DDG_LOG_DEBUG(g_logger) << *r;
+      },
+      true);
 }
 
 void run() {
@@ -41,7 +45,7 @@ void run() {
 }
 
 int main() {
-  ddg::IOManager iom(2);
+  ddg::IOManager iom;
   // iom.schedule(run);
   iom.schedule(test_pool);
   iom.start();

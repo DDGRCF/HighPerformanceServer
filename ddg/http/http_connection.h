@@ -171,7 +171,7 @@ class HttpConnectionPool {
 
  private:
   std::string m_host;
-  // TODO: ?
+  // TODO: 一个连接支持不同的协议，不同协议的host不一样，因此有时候需要手动赋值
   std::string m_vhost;
   uint16_t m_port;
   uint32_t m_maxsize;
