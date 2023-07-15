@@ -27,18 +27,21 @@ struct HttpResult {
     INVALID_HOST = 2,
     /// 连接失败
     CONNECT_FAIL = 3,
+    //
+    WRITE_BUFFER_FULL = 4,
+    READ_BUFFER_EMPTY = 5,
     /// 连接被对端关闭
-    SEND_CLOSE_BY_PEER = 4,
+    SEND_CLOSE_BY_PEER = 6,
     /// 发送请求产生Socket错误
-    SEND_SOCKET_ERROR = 5,
+    SEND_SOCKET_ERROR = 7,
     /// 超时
-    TIMEOUT = 6,
+    TIMEOUT = 8,
     /// 创建Socket失败
-    CREATE_SOCKET_ERROR = 7,
+    CREATE_SOCKET_ERROR = 9,
     /// 从连接池中取连接失败
-    POOL_GET_CONNECTION = 8,
+    POOL_GET_CONNECTION = 10,
     /// 无效的连接
-    POOL_INVALID_CONNECTION = 9,
+    POOL_INVALID_CONNECTION = 11,
 
   };
 
@@ -168,6 +171,7 @@ class HttpConnectionPool {
 
  private:
   std::string m_host;
+  // TODO: ?
   std::string m_vhost;
   uint16_t m_port;
   uint32_t m_maxsize;

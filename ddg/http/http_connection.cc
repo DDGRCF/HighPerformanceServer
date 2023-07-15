@@ -276,16 +276,16 @@ HttpResult::ptr HttpConnection::DoRequest(HttpRequest::ptr req, Uri::ptr uri,
   int ret = conn->sendRequest(req);
   if (ret == 0) {
     return std::make_shared<HttpResult>(
-        (int)HttpResult::Error::SEND_CLOSE_BY_PEER, nullptr,
-        "send request closed by peer: " + addr->toString());
+        static_cast<int>(HttpResult::Error::WRITE_BUFFER_FULL), nullptr,
+        "write buffer full");
   }
 
   // 如果小于零，就是发生其他错误
   if (ret < 0) {
     return std::make_shared<HttpResult>(
         (int)HttpResult::Error::SEND_SOCKET_ERROR, nullptr,
-        "send request socket error errno=" + std::to_string(errno) +
-            " errstr=" + std::string(strerror(errno)));
+        "send request socket error errno = " + std::to_string(errno) +
+            " errstr = " + std::string(strerror(errno)));
   }
 
   // 发送响应
@@ -379,7 +379,8 @@ void HttpConnectionPool::ReleasePtr(HttpConnection* ptr,
   if (!ptr->isConnected() ||
       ptr->m_createtime + pool->m_maxalivetime >=
           ddg::GetCurrentMilliSecond() ||
-      ptr->m_request >= pool->m_maxrequest) {
+      ptr->m_request >= pool->m_maxrequest ||
+      pool->m_total > static_cast<int32_t>(pool->m_maxsize)) {  // TODO:
     delete ptr;
     pool->m_total--;
     return;
@@ -484,13 +485,13 @@ HttpResult::ptr HttpConnectionPool::doRequest(HttpRequest::ptr req,
         "pool host:" + m_host + " port:" + std::to_string(m_port));
   }
   sock->setRecvTimeout(timeout_ms);
-  int rt = conn->sendRequest(req);
-  if (rt == 0) {
+  int ret = conn->sendRequest(req);
+  if (ret == 0) {
     return std::make_shared<HttpResult>(
         static_cast<int>(HttpResult::Error::SEND_CLOSE_BY_PEER), nullptr,
         "send request closed by peer: " + sock->getRemoteAddress()->toString());
   }
-  if (rt < 0) {
+  if (ret < 0) {
     return std::make_shared<HttpResult>(
         static_cast<int>(HttpResult::Error::SEND_SOCKET_ERROR), nullptr,
         "send request socket error errno=" + std::to_string(errno) +

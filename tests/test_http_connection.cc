@@ -42,7 +42,7 @@ void run() {
 
 int main() {
   ddg::IOManager iom(2);
-  iom.schedule(run);
+  // iom.schedule(run);
   iom.schedule(test_pool);
   iom.start();
   iom.stop();

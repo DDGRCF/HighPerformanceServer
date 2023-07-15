@@ -179,7 +179,8 @@ T getAs(const MapType& m, const std::string& key, const T& def = T()) {
 template <class MapType, class T>
 void setAs(MapType& m, const std::string& key, const T& value) {
   std::string lowercasekey = StringUtil::ToLower(key);
-  std::string lowercasevalue = StringUtil::ToLower(std::to_string(value));
+  std::string lowercasevalue =
+      StringUtil::ToLower(boost::lexical_cast<std::string>(value));
   m[lowercasekey] = lowercasevalue;
 }
 
@@ -195,6 +196,7 @@ class HttpResponse;
 class HttpRequest {
  public:
   using ptr = std::shared_ptr<HttpRequest>;
+  // 大小写无关的map
   using MapType = std::map<std::string, std::string, CaseInsensitiveLess>;
 
   HttpRequest(uint8_t version = 0x11,
