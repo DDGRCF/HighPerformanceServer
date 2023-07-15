@@ -213,4 +213,9 @@ Address::ptr Uri::createAddress() const {
     return addr;
 }
 
+std::ostream& operator<<(std::ostream& os, const Uri& uri) {
+  uri.dump(os);
+  return os;
+}
+
 }

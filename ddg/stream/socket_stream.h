@@ -16,7 +16,7 @@ class SocketStream : public Stream, public NonCopyable {
 
   SocketStream(Socket::ptr sock, bool owner = true);
 
-  ~SocketStream();
+  virtual ~SocketStream();
 
   virtual int read(void* buffer, size_t length) override;
 

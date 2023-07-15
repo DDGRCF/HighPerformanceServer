@@ -32,7 +32,7 @@ HttpConnection::~HttpConnection() {}
 
 HttpResponse::ptr HttpConnection::recvResponse() {
   HttpResponseParser::ptr parser(new HttpResponseParser);
-  uint64_t buff_size = HttpRequestParser::GetHttpRequestBufferSize();
+  size_t buff_size = HttpRequestParser::GetHttpRequestBufferSize();
   std::shared_ptr<char> buffer(new char[buff_size + 1],
                                [](char* ptr) { delete[] ptr; });
   char* data = buffer.get();
@@ -87,7 +87,6 @@ HttpResponse::ptr HttpConnection::recvResponse() {
         }
         begin = false;
       } while (!parser->isFinished());
-      //len -= 2;
 
       DDG_LOG_DEBUG(g_logger) << "content_len=" << client_parser.content_len;
       if (client_parser.content_len + 2 <= len) {
@@ -137,6 +136,7 @@ HttpResponse::ptr HttpConnection::recvResponse() {
     auto content_encoding = parser->getData()->getHeader("content-encoding");
     DDG_LOG_DEBUG(g_logger)
         << "content_encoding: " << content_encoding << " size=" << body.size();
+    // 不同的编码方式
     // if (strcasecmp(content_encoding.c_str(), "gzip") == 0) {
     // auto zs = ZlibStream::CreateGzip(false);
     // zs->write(body.c_str(), body.size());
@@ -294,6 +294,213 @@ HttpResult::ptr HttpConnection::DoRequest(HttpRequest::ptr req, Uri::ptr uri,
     return std::make_shared<HttpResult>(
         (int)HttpResult::Error::TIMEOUT, nullptr,
         "recv response timeout: " + addr->toString() +
+            " timeout_ms:" + std::to_string(timeout_ms));
+  }
+  return std::make_shared<HttpResult>(static_cast<int>(HttpResult::Error::OK),
+                                      rsp, "ok");
+}
+
+HttpConnectionPool::HttpConnectionPool(const std::string& host,
+                                       const std::string& vhost, uint16_t port,
+                                       bool is_https, size_t max_size,
+                                       time_t max_alive_time,
+                                       size_t max_request)
+    : m_host(host),
+      m_vhost(vhost),
+      m_port(port ? port : (is_https ? 443 : 80)),
+      m_maxsize(max_size),
+      m_maxalivetime(max_alive_time),
+      m_maxrequest(max_request),
+      m_ishttps(is_https) {}
+
+HttpConnectionPool::~HttpConnectionPool() {}
+
+HttpConnection::ptr HttpConnectionPool::getConnection() {
+  time_t now_ms = ddg::GetCurrentMilliSecond();
+  std::vector<HttpConnection*> invalid_conns;
+  HttpConnection* ptr = nullptr;
+  MutexType::Lock lock(m_mutex);
+  while (!m_conns.empty()) {
+    auto conn = *m_conns.begin();
+    m_conns.pop_front();
+    if (!conn->isConnected()) {
+      invalid_conns.push_back(conn);
+      continue;
+    }
+
+    if (conn->m_createtime + m_maxalivetime > now_ms) {
+      invalid_conns.push_back(conn);
+      continue;
+    }
+    ptr = conn;
+    break;
+  }
+  lock.unlock();
+  for (auto elem : invalid_conns) {
+    delete elem;
+  }
+  m_total -= static_cast<int32_t>(invalid_conns.size());
+  if (!ptr) {
+    IPAddress::ptr addr = Address::LookupAnyIPAddress(m_host);
+    if (!addr) {
+      DDG_LOG_ERROR(g_logger)
+          << "HttpConnectionPool::getConnection error, get addr fail: "
+          << m_host;
+      return nullptr;
+    }
+    addr->setPort(m_port);
+    Socket::ptr sock =
+        m_ishttps ? SSLSocket::CreateTcp(addr) : Socket::CreateTcp(addr);
+    if (!sock) {
+      DDG_LOG_ERROR(g_logger)
+          << "HttpConnectionPool::getConnection error, create sock fail: "
+          << *addr;
+      return nullptr;
+    }
+
+    if (!sock->connect(addr)) {
+      DDG_LOG_DEBUG(g_logger)
+          << "HttpConnectionPool::getConnection error, sock connect fail: "
+          << *addr;
+      return nullptr;
+    }
+
+    ptr = new HttpConnection(sock);
+    m_total++;
+  }
+  return HttpConnection::ptr(ptr, std::bind(&HttpConnectionPool::ReleasePtr,
+                                            std::placeholders::_1, this));
+}
+
+// 如果当前ptr的连接关闭，且最大存活时间大于当前时间，且当前请求完毕数量最大请求数量，释放
+void HttpConnectionPool::ReleasePtr(HttpConnection* ptr,
+                                    HttpConnectionPool* pool) {
+  ptr->m_request++;
+  if (!ptr->isConnected() ||
+      ptr->m_createtime + pool->m_maxalivetime >=
+          ddg::GetCurrentMilliSecond() ||
+      ptr->m_request >= pool->m_maxrequest) {
+    delete ptr;
+    pool->m_total--;
+    return;
+  }
+  MutexType::Lock lock(pool->m_mutex);
+  pool->m_conns.push_back(ptr);
+}
+
+HttpResult::ptr HttpConnectionPool::doGet(
+    const std::string& url, time_t timeout_ms,
+    const std::map<std::string, std::string>& headers,
+    const std::string& body) {
+  return doRequest(HttpMethod::GET, url, timeout_ms, headers, body);
+}
+
+HttpResult::ptr HttpConnectionPool::doGet(
+    Uri::ptr uri, time_t timeout_ms,
+    const std::map<std::string, std::string>& headers,
+    const std::string& body) {
+  std::stringstream ss;
+  ss << uri->getPath() << (uri->getQuery().empty() ? "" : "?")
+     << uri->getQuery() << (uri->getFragment().empty() ? "" : "#")
+     << uri->getFragment();
+  return doGet(ss.str(), timeout_ms, headers, body);
+}
+
+HttpResult::ptr HttpConnectionPool::doPost(
+    const std::string& url, time_t timeout_ms,
+    const std::map<std::string, std::string>& headers,
+    const std::string& body) {
+  return doRequest(HttpMethod::POST, url, timeout_ms, headers, body);
+}
+
+HttpResult::ptr HttpConnectionPool::doPost(
+    Uri::ptr uri, time_t timeout_ms,
+    const std::map<std::string, std::string>& headers,
+    const std::string& body) {
+  std::stringstream ss;
+  ss << uri->getPath() << (uri->getQuery().empty() ? "" : "?")
+     << uri->getQuery() << (uri->getFragment().empty() ? "" : "#")
+     << uri->getFragment();
+  return doPost(ss.str(), timeout_ms, headers, body);
+}
+
+HttpResult::ptr HttpConnectionPool::doRequest(
+    HttpMethod method, const std::string& url, time_t timeout_ms,
+    const std::map<std::string, std::string>& headers,
+    const std::string& body) {
+  HttpRequest::ptr req = std::make_shared<HttpRequest>();
+  req->setPath(url);
+  req->setMethod(method);
+  req->setClose(false);
+  bool has_host = false;
+  for (auto& i : headers) {
+    if (strcasecmp(i.first.c_str(), "connection") == 0) {
+      if (strcasecmp(i.second.c_str(), "keep-alive") == 0) {
+        req->setClose(false);
+      }
+      continue;
+    }
+
+    if (!has_host && strcasecmp(i.first.c_str(), "host") == 0) {
+      has_host = !i.second.empty();
+    }
+
+    req->setHeader(i.first, i.second);
+  }
+  if (!has_host) {
+    if (m_vhost.empty()) {
+      req->setHeader("Host", m_host);
+    } else {
+      req->setHeader("Host", m_vhost);
+    }
+  }
+  req->setBody(body);
+  return doRequest(req, timeout_ms);
+}
+
+HttpResult::ptr HttpConnectionPool::doRequest(
+    HttpMethod method, Uri::ptr uri, time_t timeout_ms,
+    const std::map<std::string, std::string>& headers,
+    const std::string& body) {
+  std::stringstream ss;
+  ss << uri->getPath() << (uri->getQuery().empty() ? "" : "?")
+     << uri->getQuery() << (uri->getFragment().empty() ? "" : "#")
+     << uri->getFragment();
+  return doRequest(method, ss.str(), timeout_ms, headers, body);
+}
+
+HttpResult::ptr HttpConnectionPool::doRequest(HttpRequest::ptr req,
+                                              time_t timeout_ms) {
+  auto conn = getConnection();
+  if (!conn) {
+    return std::make_shared<HttpResult>(
+        static_cast<int>(HttpResult::Error::POOL_GET_CONNECTION), nullptr,
+        "pool host:" + m_host + " port:" + std::to_string(m_port));
+  }
+  auto sock = conn->getSocket();
+  if (!sock) {
+    return std::make_shared<HttpResult>(
+        static_cast<int>(HttpResult::Error::POOL_INVALID_CONNECTION), nullptr,
+        "pool host:" + m_host + " port:" + std::to_string(m_port));
+  }
+  sock->setRecvTimeout(timeout_ms);
+  int rt = conn->sendRequest(req);
+  if (rt == 0) {
+    return std::make_shared<HttpResult>(
+        static_cast<int>(HttpResult::Error::SEND_CLOSE_BY_PEER), nullptr,
+        "send request closed by peer: " + sock->getRemoteAddress()->toString());
+  }
+  if (rt < 0) {
+    return std::make_shared<HttpResult>(
+        static_cast<int>(HttpResult::Error::SEND_SOCKET_ERROR), nullptr,
+        "send request socket error errno=" + std::to_string(errno) +
+            " errstr=" + std::string(strerror(errno)));
+  }
+  auto rsp = conn->recvResponse();
+  if (!rsp) {
+    return std::make_shared<HttpResult>(
+        static_cast<int>(HttpResult::Error::TIMEOUT), nullptr,
+        "recv response timeout: " + sock->getRemoteAddress()->toString() +
             " timeout_ms:" + std::to_string(timeout_ms));
   }
   return std::make_shared<HttpResult>(static_cast<int>(HttpResult::Error::OK),

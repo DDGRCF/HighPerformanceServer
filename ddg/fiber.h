@@ -45,6 +45,7 @@ class Fiber : public std::enable_shared_from_this<Fiber> {
   };
 
  private:
+  // 装饰器，来控制结束状态
   class CallbackWrap {
    public:
     CallbackWrap(Callback callback) : m_callback(callback) {}

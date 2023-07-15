@@ -133,6 +133,8 @@ class Uri {
      */
   std::string toString() const;
 
+  friend std::ostream& operator<<(std::ostream& os, const Uri& uri);
+
   /**
      * @brief 获取Address
      */

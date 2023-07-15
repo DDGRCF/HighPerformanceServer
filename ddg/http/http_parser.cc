@@ -165,6 +165,10 @@ void on_response_status(void* data, const char* at, size_t length) {
 }
 
 void on_response_chunk(void* data, const char* at, size_t length) {
+  HttpResponseParser* parser = static_cast<HttpResponseParser*>(data);
+  if (!parser->getData()->isChunk()) {
+    parser->getData()->setChunk(true);
+  }
   DDG_LOG_DEBUG(g_logger) << "on_response_chunk";
 }
 
@@ -189,6 +193,10 @@ void on_response_header_done(void* data, const char* at, size_t length) {
 }
 
 void on_response_last_chunk(void* data, const char* at, size_t length) {
+  HttpResponseParser* parser = static_cast<HttpResponseParser*>(data);
+  if (parser->getData()->isChunk()) {
+    parser->getData()->setChunk(true);
+  }
   DDG_LOG_DEBUG(g_logger) << "on_response_last_chunk";
 }
 

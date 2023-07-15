@@ -75,8 +75,9 @@ bool Socket::setOption(int level, int option, const void* result,
   int ret = setsockopt(m_sock, level, option, result, len);
   if (ret) {
     DDG_LOG_DEBUG(g_logger)
-        << "setOption sock = " << m_sock << " level = " << level << " option"
-        << option << " errno = " << errno << " errstr = " << strerror(errno);
+        << "setOption sock = " << m_sock << " level = " << level
+        << " option = " << option << " errno = " << errno
+        << " errstr = " << strerror(errno);
     return false;
   }
   return true;
@@ -165,7 +166,7 @@ bool Socket::connect(const Address::ptr addr, time_t timeout_ms) {
   if (timeout_ms == -1) {
     if (::connect(m_sock, addr->getAddr(), addr->getAddrLen())) {
       DDG_LOG_DEBUG(g_logger)
-          << "sock = " << m_sock << " connect(" << addr->toString()
+          << "sock = " << m_sock << " connect(" << *addr
           << ") error errno = " << errno << " errstr = " << strerror(errno);
       close();
       return false;
@@ -174,7 +175,7 @@ bool Socket::connect(const Address::ptr addr, time_t timeout_ms) {
     if (::connect_with_timeout(m_sock, addr->getAddr(), addr->getAddrLen(),
                                timeout_ms)) {
       DDG_LOG_DEBUG(g_logger)
-          << "sock = " << m_sock << " connect(" << addr->toString()
+          << "sock = " << m_sock << " connect(" << *addr
           << ") timeout = " << timeout_ms << " error errno = " << errno
           << " errstr = " << strerror(errno);
       close();

@@ -63,7 +63,7 @@ HttpRequest::HttpRequest(uint8_t version, bool close)
       m_version(version),
       m_close(close),
       m_websocket(false),
-      m_parserParamFlag(0),
+      m_parser_paramflag(0),
       m_path("/") {}
 
 std::shared_ptr<HttpResponse> HttpRequest::createResponse() {
@@ -272,7 +272,7 @@ void HttpRequest::initParam() {
 }
 
 void HttpRequest::initQueryParam() {  // TODO:
-  if (m_parserParamFlag & 0x01) {
+  if (m_parser_paramflag & 0x01) {
     return;
   }
 #define PARSE_PARAM(str, m, flag, trim)                                    \
@@ -294,34 +294,34 @@ void HttpRequest::initQueryParam() {  // TODO:
     pos++;                                                                 \
   } while (true);
   PARSE_PARAM(m_query, m_params, '&', );
-  m_parserParamFlag |= 0x01;
+  m_parser_paramflag |= 0x01;
 }
 
 void HttpRequest::initBodyParam() {  // TODO:
-  if (m_parserParamFlag & 0x02) {
+  if (m_parser_paramflag & 0x02) {
     return;
   }
   std::string content_type = getHeader("content-type");
   if (strcasecmp(content_type.c_str(), "application/x-www-form-urlencoded") ==
       0) {
-    m_parserParamFlag |= 0x02;
+    m_parser_paramflag |= 0x02;
     return;
   }
   PARSE_PARAM(m_body, m_params, '&', );
-  m_parserParamFlag |= 0x02;
+  m_parser_paramflag |= 0x02;
 }
 
 void HttpRequest::initCookies() {  // TODO:
-  if (m_parserParamFlag & 0x04) {
+  if (m_parser_paramflag & 0x04) {
     return;
   }
   std::string cookie = getHeader("cookie");
   if (cookie.empty()) {
-    m_parserParamFlag |= 0x04;
+    m_parser_paramflag |= 0x04;
     return;
   }
   PARSE_PARAM(cookie, m_cookies, ';', ddg::StringUtil::Trim);
-  m_parserParamFlag |= 0x04;
+  m_parser_paramflag |= 0x04;
 }
 
 std::ostream& operator<<(std::ostream& os, const HttpRequest& req) {
@@ -334,11 +334,12 @@ std::string HttpRequest::toString() const {
   return ss.str();
 }
 
-HttpResponse::HttpResponse(uint8_t version, bool close)
+HttpResponse::HttpResponse(uint8_t version, bool close, bool chunk)
     : m_status(HttpStatus::OK),
       m_version(version),
       m_close(close),
-      m_websocket(false) {}
+      m_websocket(false),
+      m_ischunk(chunk) {}
 
 std::string HttpResponse::getHeader(const std::string& key,
                                     const std::string& def) const {
@@ -375,7 +376,7 @@ void HttpResponse::setVersion(uint8_t v) {
 }
 
 void HttpResponse::setBody(const std::string& v) {
-  if (!v.empty()) {
+  if (!m_ischunk && !v.empty()) {
     setHeaderAs("content-length", v.size());
   }
   m_body = v;
@@ -387,6 +388,21 @@ void HttpResponse::setReason(const std::string& v) {
 
 void HttpResponse::setHeaders(const MapType& v) {
   m_headers = v;
+}
+
+void HttpResponse::setClose(bool v) {
+  m_close = v;
+}
+
+bool HttpResponse::isChunk() const {
+  return m_ischunk;
+}
+
+void HttpResponse::setChunk(bool v) {
+  if (v) {
+    delHeader("content-length");
+  }
+  m_ischunk = v;
 }
 
 void HttpResponse::setHeader(const std::string& key, const std::string& val) {

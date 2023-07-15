@@ -105,12 +105,79 @@ class HttpConnection : public SocketStream {
       const std::map<std::string, std::string>& headers = {},
       const std::string& body = "");
 
+  // 从req取得大部分信息，从uri指定地址信息 P77 18:00
   static HttpResult::ptr DoRequest(HttpRequest::ptr req, Uri::ptr uri,
                                    time_t timeout_ms);
 
  private:
   time_t m_createtime = 0;
   time_t m_request = 0;
+};
+
+// 为一个域名创建连接池
+class HttpConnectionPool {
+ public:
+  using ptr = std::shared_ptr<HttpConnectionPool>;
+  using MutexType = Mutex;
+
+  HttpConnectionPool(const std::string& host, const std::string& vhost,
+                     uint16_t port, bool is_https, size_t max_size,
+                     time_t max_alive_time, size_t max_request);
+
+  ~HttpConnectionPool();
+
+  HttpConnection::ptr getConnection();
+
+ public:
+  static HttpConnectionPool::ptr Create(const std::string& uri,
+                                        const std::string& vhost,
+                                        size_t max_size, time_t max_alive_time,
+                                        size_t max_request);
+
+ private:
+  static void ReleasePtr(HttpConnection* ptr, HttpConnectionPool* pool);
+
+ public:
+  HttpResult::ptr doGet(const std::string& url, time_t timeout_ms,
+                        const std::map<std::string, std::string>& headers = {},
+                        const std::string& body = "");
+
+  HttpResult::ptr doGet(Uri::ptr uri, time_t timeout_ms,
+                        const std::map<std::string, std::string>& headers = {},
+                        const std::string& body = "");
+
+  HttpResult::ptr doPost(const std::string& url, time_t timeout_ms,
+                         const std::map<std::string, std::string>& headers = {},
+                         const std::string& body = "");
+
+  HttpResult::ptr doPost(Uri::ptr uri, time_t timeout_ms,
+                         const std::map<std::string, std::string>& headers = {},
+                         const std::string& body = "");
+
+  HttpResult::ptr doRequest(
+      HttpMethod method, const std::string& url, time_t timeout_ms,
+      const std::map<std::string, std::string>& headers = {},
+      const std::string& body = "");
+
+  HttpResult::ptr doRequest(
+      HttpMethod method, Uri::ptr uri, time_t timeout_ms,
+      const std::map<std::string, std::string>& headers = {},
+      const std::string& body = "");
+
+  HttpResult::ptr doRequest(HttpRequest::ptr req, time_t timeout_ms);
+
+ private:
+  std::string m_host;
+  std::string m_vhost;
+  uint16_t m_port;
+  uint32_t m_maxsize;
+  time_t m_maxalivetime;
+  uint32_t m_maxrequest;
+  bool m_ishttps;
+
+  MutexType m_mutex;
+  std::list<HttpConnection*> m_conns;
+  std::atomic<int32_t> m_total = {0};
 };
 
 }  // namespace http

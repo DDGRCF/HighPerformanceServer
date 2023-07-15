@@ -197,7 +197,8 @@ class HttpRequest {
   using ptr = std::shared_ptr<HttpRequest>;
   using MapType = std::map<std::string, std::string, CaseInsensitiveLess>;
 
-  HttpRequest(uint8_t version = 0x11, bool close = true);  // TODO: 版本可以改变
+  HttpRequest(uint8_t version = 0x11,
+              bool close = true);  // TODO: 版本可以改变
 
   std::shared_ptr<HttpResponse> createResponse();
 
@@ -343,7 +344,9 @@ class HttpRequest {
 
   bool m_websocket;  // web socket
 
-  uint8_t m_parserParamFlag;
+  bool m_ischunk;
+
+  uint8_t m_parser_paramflag;
 
   std::string m_path;
 
@@ -365,7 +368,7 @@ class HttpResponse {
   using ptr = std::shared_ptr<HttpResponse>;
   using MapType = std::map<std::string, std::string, CaseInsensitiveLess>;
 
-  HttpResponse(uint8_t version = 0x11, bool close = true);
+  HttpResponse(uint8_t version = 0x11, bool close = true, bool chunk = false);
 
   friend std::ostream& operator<<(std::ostream& os, const HttpResponse& resp);
 
@@ -399,7 +402,11 @@ class HttpResponse {
   /**
      * @brief 设置是否自动关闭
      */
-  void setClose(bool v) { m_close = v; }
+  void setClose(bool v);
+
+  bool isChunk() const;
+
+  void setChunk(bool v);
 
   /**
      * @brief 是否websocket
@@ -474,19 +481,21 @@ class HttpResponse {
                  const std::string& domain = "", bool secure = false);
 
  private:
-  /// 响应状态
+  // 响应状态
   HttpStatus m_status;
-  /// 版本
+  // 版本
   uint8_t m_version;
-  /// 是否自动关闭
+  // 是否自动关闭
   bool m_close;
-  /// 是否为websocket
+  // 是否为websocket
   bool m_websocket;
-  /// 响应消息体
+
+  bool m_ischunk;
+  // 响应消息体
   std::string m_body;
-  /// 响应原因
+  // 响应原因
   std::string m_reason;
-  /// 响应头部MAP
+  // 响应头部MAP
   MapType m_headers;
 
   std::vector<std::string> m_cookies;
